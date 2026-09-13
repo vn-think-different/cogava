@@ -8,6 +8,7 @@ import {
   getDayOfWeekVN,
 } from '../utils/formatters';
 import { PayslipModal } from './PayslipModal';
+import { UserAvatar } from './UserAvatar';
 import {
   FileSpreadsheet,
   Lock,
@@ -25,6 +26,9 @@ import {
   ShieldAlert,
   LayoutGrid,
   Smartphone,
+  ShieldCheck,
+  User,
+  Users2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -32,6 +36,7 @@ export const MonthlyPayrollView: React.FC = () => {
   const {
     attendanceRecords,
     employees,
+    teams,
     companyInfo,
     isMonthLocked,
     lockMonth,
@@ -42,6 +47,7 @@ export const MonthlyPayrollView: React.FC = () => {
 
   // Selected Month (YYYY-MM)
   const [selectedMonth, setSelectedMonth] = useState<string>('2026-08');
+  const [selectedTeamFilter, setSelectedTeamFilter] = useState<string>('ALL');
   const [activeSubTab, setActiveSubTab] = useState<'summary' | 'matrix'>('summary');
   
   // Mobile display mode toggles: 'card' (default on mobile) or 'table'
@@ -53,6 +59,10 @@ export const MonthlyPayrollView: React.FC = () => {
   const [showUnlockDialog, setShowUnlockDialog] = useState<boolean>(false);
   const [unlockReason, setUnlockReason] = useState<string>('');
   const [copyNotification, setCopyNotification] = useState<string | null>(null);
+
+  const isEmployee = currentUser.vaiTro === 'NHAN_VIEN';
+  const isDoiTruong = currentUser.vaiTro === 'DOI_TRUONG';
+  const currentTeam = teams.find(t => t.id === (currentUser.doiId || 'doi-1'));
 
   // Available months extracted from attendance records
   const availableMonths = useMemo(() => {
@@ -66,12 +76,17 @@ export const MonthlyPayrollView: React.FC = () => {
     return Array.from(monthSet).sort().reverse();
   }, [attendanceRecords]);
 
-  // Records for current selected month
+  // Records for current selected month (with team-based filtering for DOI_TRUONG or ADMIN)
   const monthRecords = useMemo(() => {
-    return attendanceRecords
-      .filter(r => r.ngay.startsWith(selectedMonth))
-      .sort((a, b) => a.ngay.localeCompare(b.ngay));
-  }, [attendanceRecords, selectedMonth]);
+    let records = attendanceRecords.filter(r => r.ngay.startsWith(selectedMonth));
+    if (isDoiTruong) {
+      const userTeamId = currentUser.doiId || 'doi-1';
+      records = records.filter(r => r.doiId === userTeamId || (!r.doiId && userTeamId === 'doi-1'));
+    } else if (selectedTeamFilter !== 'ALL') {
+      records = records.filter(r => r.doiId === selectedTeamFilter || (!r.doiId && selectedTeamFilter === 'doi-1'));
+    }
+    return records.sort((a, b) => a.ngay.localeCompare(b.ngay));
+  }, [attendanceRecords, selectedMonth, isDoiTruong, currentUser.doiId, selectedTeamFilter]);
 
   const monthLocked = useMemo(() => {
     return isMonthLocked(selectedMonth);
@@ -100,9 +115,39 @@ export const MonthlyPayrollView: React.FC = () => {
     };
   }, [monthRecords]);
 
+  // Find logged-in employee when role is NHAN_VIEN
+  const loggedInEmployee = useMemo(() => {
+    if (!isEmployee) return null;
+    return (
+      employees.find(e => e.id === currentUser.nhanVienId) ||
+      employees.find(
+        e => e.hoTen.trim().toLowerCase() === currentUser.tenHienThi.trim().toLowerCase()
+      ) ||
+      employees[0]
+    );
+  }, [isEmployee, currentUser, employees]);
+
+  // Visible employees based on role-based data isolation:
+  // - NHAN_VIEN: Only see their own record
+  // - DOI_TRUONG: Only see employees of their own team
+  // - ADMIN: Can see all or filter by team
+  const visibleEmployees = useMemo(() => {
+    if (isEmployee && loggedInEmployee) {
+      return [loggedInEmployee];
+    }
+    if (isDoiTruong) {
+      const userTeamId = currentUser.doiId || 'doi-1';
+      return employees.filter(e => e.doiId === userTeamId || (!e.doiId && userTeamId === 'doi-1'));
+    }
+    if (selectedTeamFilter !== 'ALL') {
+      return employees.filter(e => e.doiId === selectedTeamFilter || (!e.doiId && selectedTeamFilter === 'doi-1'));
+    }
+    return employees;
+  }, [isEmployee, loggedInEmployee, isDoiTruong, currentUser.doiId, selectedTeamFilter, employees]);
+
   // Aggregation per employee (Sheet "Tổng hợp")
   const employeeSummaries = useMemo(() => {
-    return employees.map(emp => {
+    return visibleEmployees.map(emp => {
       let daysCount = 0;
       let totalSalary = 0;
 
@@ -127,7 +172,10 @@ export const MonthlyPayrollView: React.FC = () => {
         workRatio,
       };
     });
-  }, [employees, monthRecords, monthlyMetrics.workingDaysCount]);
+  }, [visibleEmployees, monthRecords, monthlyMetrics.workingDaysCount]);
+
+  // Metrics for employee view
+  const mySummary = isEmployee ? employeeSummaries[0] : null;
 
   // Automatic balance check: Sum of employee salaries === Total daily wages paid
   const sumEmployeeSalaries = useMemo(() => {
@@ -170,25 +218,35 @@ export const MonthlyPayrollView: React.FC = () => {
   const handleExportCSV = () => {
     const [year, month] = selectedMonth.split('-');
     let csvContent = '\uFEFF'; // UTF-8 BOM for Excel Vietnamese compatibility
-    csvContent += `BẢNG TỔNG HỢP LƯƠNG ĐỘI BẮT GÀ - CÔNG TY TNHH COGAVA\n`;
-    csvContent += `Kỳ lương: Tháng ${month}/${year}\n`;
-    csvContent += `Tổng sản lượng: ${monthlyMetrics.totalChickens.toLocaleString('vi-VN')} con gà | Tổng quỹ lương: ${monthlyMetrics.totalPayroll.toLocaleString('vi-VN')} đ\n\n`;
+    if (isEmployee && loggedInEmployee) {
+      csvContent += `PHIẾU LƯƠNG CÁ NHÂN - CÔNG TY TNHH COGAVA\n`;
+      csvContent += `Nhân viên: ${loggedInEmployee.hoTen} (${loggedInEmployee.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'})\n`;
+      csvContent += `Kỳ lương: Tháng ${month}/${year}\n`;
+      csvContent += `STT,Họ và tên,Vai trò,Số ngày công,Tỷ lệ công (%),Tổng lương thực nhận (VNĐ),Lương TB/ngày (VNĐ),Số tài khoản,Ngân hàng thụ hưởng\n`;
+      employeeSummaries.forEach((row, idx) => {
+        csvContent += `${idx + 1},"${row.employee.hoTen}","${row.employee.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'}",${row.daysCount},${row.workRatio.toFixed(1)}%,${row.totalSalary},${row.avgWagePerDay},"${row.employee.stkNganHang || ''}","${row.employee.tenNganHang || ''}"\n`;
+      });
+    } else {
+      csvContent += `BẢNG TỔNG HỢP LƯƠNG ĐỘI BẮT GÀ - CÔNG TY TNHH COGAVA\n`;
+      csvContent += `Kỳ lương: Tháng ${month}/${year}\n`;
+      csvContent += `Tổng sản lượng: ${monthlyMetrics.totalChickens.toLocaleString('vi-VN')} con gà | Tổng quỹ lương: ${monthlyMetrics.totalPayroll.toLocaleString('vi-VN')} đ\n\n`;
 
-    // Header
-    csvContent += `STT,Họ và tên,Vai trò,Số ngày công,Tỷ lệ công (%),Tổng lương thực nhận (VNĐ),Lương TB/ngày (VNĐ),Số tài khoản,Ngân hàng thụ hưởng\n`;
+      // Header
+      csvContent += `STT,Họ và tên,Vai trò,Số ngày công,Tỷ lệ công (%),Tổng lương thực nhận (VNĐ),Lương TB/ngày (VNĐ),Số tài khoản,Ngân hàng thụ hưởng\n`;
 
-    // Rows
-    employeeSummaries.forEach((row, idx) => {
-      csvContent += `${idx + 1},"${row.employee.hoTen}","${row.employee.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'}",${row.daysCount},${row.workRatio.toFixed(1)}%,${row.totalSalary},${row.avgWagePerDay},"${row.employee.stkNganHang || ''}","${row.employee.tenNganHang || ''}"\n`;
-    });
+      // Rows
+      employeeSummaries.forEach((row, idx) => {
+        csvContent += `${idx + 1},"${row.employee.hoTen}","${row.employee.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'}",${row.daysCount},${row.workRatio.toFixed(1)}%,${row.totalSalary},${row.avgWagePerDay},"${row.employee.stkNganHang || ''}","${row.employee.tenNganHang || ''}"\n`;
+      });
 
-    csvContent += `\nTỔNG CỘNG,,,"${monthlyMetrics.totalShifts}",,${sumEmployeeSalaries},,,\n`;
+      csvContent += `\nTỔNG CỘNG,,,"${monthlyMetrics.totalShifts}",,${sumEmployeeSalaries},,,\n`;
+    }
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Bang_luong_COGAVA_T${month}_${year}.csv`);
+    link.setAttribute('download', isEmployee && loggedInEmployee ? `Phieu_luong_${loggedInEmployee.hoTen}_T${month}_${year}.csv` : `Bang_luong_COGAVA_T${month}_${year}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -207,8 +265,8 @@ export const MonthlyPayrollView: React.FC = () => {
       {/* Top Controller Bar */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-xs border border-stone-200">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          {/* Month Selector */}
-          <div className="flex items-center gap-3">
+          {/* Month & Team Selector */}
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
               <Calendar className="w-5 h-5 text-orange-600" />
               <span className="text-sm font-bold text-stone-800">Kỳ lương:</span>
@@ -229,6 +287,27 @@ export const MonthlyPayrollView: React.FC = () => {
                 );
               })}
             </select>
+
+            {/* Team Filter for Admin */}
+            {currentUser.vaiTro === 'ADMIN' && (
+              <div className="flex items-center gap-2">
+                <Users2 className="w-4 h-4 text-stone-500 ml-1" />
+                <select
+                  id="select-payroll-team-filter"
+                  aria-label="Lọc theo đội bắt gà"
+                  value={selectedTeamFilter}
+                  onChange={e => setSelectedTeamFilter(e.target.value)}
+                  className="text-xs font-bold text-stone-800 bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 focus:outline-hidden focus:ring-2 focus:ring-orange-500 cursor-pointer"
+                >
+                  <option value="ALL">Toàn bộ công ty (Tất cả đội)</option>
+                  {teams.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.tenDoi} ({employees.filter(e => e.doiId === t.id && e.trangThai === 'DANG_LAM').length} NV)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Lock Status Badge */}
             {monthLocked ? (
@@ -301,12 +380,78 @@ export const MonthlyPayrollView: React.FC = () => {
         )}
       </div>
 
-      {/* KPI Overview Cards */}
+      {/* Employee Data Isolation Notice Banner */}
+      {isEmployee && loggedInEmployee && (
+        <div className="p-4 bg-orange-50/80 border border-orange-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex items-center gap-3">
+            <UserAvatar
+              avatar={currentUser.avatar}
+              name={loggedInEmployee.hoTen}
+              role={currentUser.vaiTro}
+              size="md"
+            />
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-sm text-stone-900">
+                  Bảng lương cá nhân: {loggedInEmployee.hoTen}
+                </span>
+                <span className="text-[10px] font-bold text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200 uppercase">
+                  {loggedInEmployee.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'}
+                </span>
+              </div>
+              <p className="text-[11px] text-stone-600 mt-0.5">
+                🔒 Phân quyền bảo mật: Bạn chỉ xem bảng lương và phiếu lương của riêng mình. Không hiển thị lương của người khác.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedEmployeeForPayslip(loggedInEmployee)}
+            className="px-3.5 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer flex-shrink-0"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span>Xem phiếu lương của tôi</span>
+          </button>
+        </div>
+      )}
+
+      {/* Team Captain Data Isolation Notice Banner */}
+      {isDoiTruong && (
+        <div className="p-4 bg-sky-50/90 border border-sky-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-sky-500 text-white rounded-xl shadow-2xs">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-sm text-sky-950">
+                  Bảng lương {currentTeam?.tenDoi || 'Đội của bạn'} ({visibleEmployees.length} nhân viên)
+                </span>
+                {currentTeam?.khuVuc && (
+                  <span className="text-[10px] font-bold text-sky-800 bg-sky-100 px-2 py-0.5 rounded border border-sky-200">
+                    {currentTeam.khuVuc}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-sky-700 mt-0.5">
+                Đội trưởng <strong>{currentUser.tenHienThi}</strong>: Theo phân quyền bảo mật, bạn chỉ xem bảng lương của các thành viên trong đội mình phụ trách.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-right">
+            <span className="text-xs font-bold text-sky-900 bg-white px-3 py-2 rounded-xl border border-sky-200 shadow-2xs">
+              Tổng chi lương đội: <strong className="font-mono text-sky-600">{formatVND(monthlyMetrics.totalPayroll)}</strong>
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* KPI Overview Cards (Adapted for Employee vs Admin/Captain) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Chickens */}
         <div className="bg-white rounded-2xl p-4 shadow-xs border border-stone-200">
           <span className="text-xs font-bold text-stone-500 uppercase tracking-wider block">
-            Tổng sản lượng gà
+            {isEmployee ? 'Sản lượng toàn đội tháng' : 'Tổng sản lượng gà'}
           </span>
           <div className="mt-1 flex items-baseline justify-between">
             <span className="text-2xl font-black text-stone-900 font-mono">
@@ -319,64 +464,85 @@ export const MonthlyPayrollView: React.FC = () => {
           </span>
         </div>
 
-        {/* Total Payroll */}
+        {/* Total Payroll or My Salary */}
         <div className="bg-white rounded-2xl p-4 shadow-xs border border-stone-200">
           <span className="text-xs font-bold text-stone-500 uppercase tracking-wider block">
-            Tổng quỹ lương chi trả
+            {isEmployee ? 'Lương thực nhận của bạn' : 'Tổng quỹ lương chi trả'}
           </span>
           <div className="mt-1 flex items-baseline justify-between">
             <span className="text-2xl font-black text-orange-600 font-mono">
-              {formatVND(monthlyMetrics.totalPayroll)}
+              {formatVND(isEmployee ? mySummary?.totalSalary || 0 : monthlyMetrics.totalPayroll)}
             </span>
           </div>
           <span className="text-[11px] text-stone-400 mt-1 block">
-            Đơn vị tính: VNĐ
+            {isEmployee ? 'Đơn vị tính: VNĐ' : 'Đơn vị tính: VNĐ'}
           </span>
         </div>
 
         {/* Working Days */}
         <div className="bg-white rounded-2xl p-4 shadow-xs border border-stone-200">
           <span className="text-xs font-bold text-stone-500 uppercase tracking-wider block">
-            Số ngày đi bắt
+            {isEmployee ? 'Số ngày công của bạn' : 'Số ngày đi bắt'}
           </span>
           <div className="mt-1 flex items-baseline justify-between">
             <span className="text-2xl font-black text-stone-900 font-mono">
-              {monthlyMetrics.workingDaysCount}
+              {isEmployee ? mySummary?.daysCount || 0 : monthlyMetrics.workingDaysCount}
             </span>
             <span className="text-xs text-stone-500 font-bold">ngày công</span>
           </div>
           <span className="text-[11px] text-stone-400 mt-1 block">
-            Tổng {monthlyMetrics.totalShifts} lượt công nhân
+            {isEmployee
+              ? `Tỷ lệ tham gia: ${(mySummary?.workRatio || 0).toFixed(0)}% số ca`
+              : `Tổng ${monthlyMetrics.totalShifts} lượt công nhân`}
           </span>
         </div>
 
-        {/* Automatic Balance Validation Badge */}
-        <div className={`rounded-2xl p-4 shadow-xs border ${
-          isBalanceVerified
-            ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-            : 'bg-rose-50/70 border-rose-200 text-rose-900'
-        }`}>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider">
-              Đối chiếu số liệu
-            </span>
-            {isBalanceVerified ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-rose-600" />
-            )}
+        {/* Automatic Balance Validation Badge or Employee Privacy Badge */}
+        {isEmployee ? (
+          <div className="bg-emerald-50/70 border border-emerald-200 text-emerald-900 rounded-2xl p-4 shadow-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider">
+                Bảo mật cá nhân
+              </span>
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div className="mt-1">
+              <span className="text-lg font-black block leading-tight font-mono text-emerald-800">
+                100% Bảo mật
+              </span>
+              <span className="text-[11px] text-emerald-700/80 mt-1 block">
+                Chỉ hiển thị thu nhập của riêng bạn
+              </span>
+            </div>
           </div>
-          <div className="mt-1">
-            <span className="text-lg font-black block leading-tight font-mono">
-              {isBalanceVerified ? '100% Khớp quỹ' : 'Chưa cân bằng!'}
-            </span>
-            <span className="text-[11px] opacity-80 mt-1 block">
-              {isBalanceVerified
-                ? 'Tổng lương nhân viên = Tổng quỹ lương ngày'
-                : `Lệch: ${formatVND(sumEmployeeSalaries - monthlyMetrics.totalPayroll)}`}
-            </span>
+        ) : (
+          <div className={`rounded-2xl p-4 shadow-xs border ${
+            isBalanceVerified
+              ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+              : 'bg-rose-50/70 border-rose-200 text-rose-900'
+          }`}>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider">
+                Đối chiếu số liệu
+              </span>
+              {isBalanceVerified ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-600" />
+              )}
+            </div>
+            <div className="mt-1">
+              <span className="text-lg font-black block leading-tight font-mono">
+                {isBalanceVerified ? '100% Khớp quỹ' : 'Chưa cân bằng!'}
+              </span>
+              <span className="text-[11px] opacity-80 mt-1 block">
+                {isBalanceVerified
+                  ? 'Tổng lương nhân viên = Tổng quỹ lương ngày'
+                  : `Lệch: ${formatVND(sumEmployeeSalaries - monthlyMetrics.totalPayroll)}`}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Sub Tab Switcher: "Bảng tổng hợp (Tổng hợp Tx)" vs "Ma trận ngày (Bảng lương Tx)" */}
@@ -391,7 +557,7 @@ export const MonthlyPayrollView: React.FC = () => {
           }`}
         >
           <Layers className="w-4 h-4" />
-          Bảng tổng hợp theo nhân viên (Sheet "Tổng hợp")
+          {isEmployee ? 'Bảng tổng hợp lương cá nhân' : 'Bảng tổng hợp theo nhân viên (Sheet "Tổng hợp")'}
         </button>
 
         <button
@@ -404,7 +570,7 @@ export const MonthlyPayrollView: React.FC = () => {
           }`}
         >
           <Table className="w-4 h-4" />
-          Bảng nhập liệu chi tiết từng ngày (Sheet "Bảng lương")
+          {isEmployee ? 'Chi tiết các ngày làm việc của bạn' : 'Bảng nhập liệu chi tiết từng ngày (Sheet "Bảng lương")'}
         </button>
       </div>
 
@@ -746,7 +912,18 @@ export const MonthlyPayrollView: React.FC = () => {
           {isMobileView && mobileMatrixMode === 'card' ? (
             /* MOBILE DAY CARDS: Clear day-by-day logs for phone screens */
             <div className="p-3 sm:p-4 space-y-3 bg-stone-50/50">
-              {monthRecords.map(rec => {
+              {monthRecords.length === 0 ? (
+                <div className="p-8 text-center bg-white rounded-2xl border border-stone-200 space-y-2">
+                  <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center mx-auto">
+                    <Table className="w-5 h-5" />
+                  </div>
+                  <h4 className="text-xs font-bold text-stone-900">CSDL đang ở trạng thái trắng (0 bản ghi)</h4>
+                  <p className="text-[11px] text-stone-500 max-w-xs mx-auto">
+                    Chưa có ngày chấm công nào trong tháng {selectedMonth}. Bạn có thể vào tab Chấm công để nhập ngày công mới kiểm thử.
+                  </p>
+                </div>
+              ) : (
+                monthRecords.map(rec => {
                 const sumRow = rec.chiTiet.reduce((s, c) => s + c.luongNhanDuoc, 0);
                 const isMatch = sumRow === rec.tongLuongNgay;
                 const workingEmployees = rec.chiTiet.filter(c => c.coMat);
@@ -791,10 +968,12 @@ export const MonthlyPayrollView: React.FC = () => {
                     {/* Employee wage chips for this day */}
                     <div className="pt-2 border-t border-stone-100">
                       <span className="text-[11px] font-bold text-stone-500 block mb-1.5">
-                        {workingEmployees.length} nhân viên đi làm & tiền công:
+                        {isEmployee
+                          ? 'Trạng thái đi làm & tiền công của bạn:'
+                          : `${workingEmployees.length} nhân viên đi làm & tiền công:`}
                       </span>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                        {employees.map(emp => {
+                        {visibleEmployees.map(emp => {
                           const detail = rec.chiTiet.find(c => c.nhanVienId === emp.id);
                           const isPresent = detail && detail.coMat;
                           return (
@@ -819,7 +998,7 @@ export const MonthlyPayrollView: React.FC = () => {
                     </div>
                   </div>
                 );
-              })}
+              }))}
             </div>
           ) : (
             /* MATRIX TABLE: With Sticky Date Column */
@@ -839,17 +1018,31 @@ export const MonthlyPayrollView: React.FC = () => {
                     <th className="py-2.5 px-3 whitespace-nowrap">Thứ</th>
                     <th className="py-2.5 px-3 text-right whitespace-nowrap">Số con gà (C)</th>
                     <th className="py-2.5 px-3 text-right whitespace-nowrap">Đơn giá (E)</th>
-                    <th className="py-2.5 px-3 text-right whitespace-nowrap">Tổng lương ngày (D)</th>
-                    {employees.map(emp => (
+                    <th className="py-2.5 px-3 text-right whitespace-nowrap">
+                      {isEmployee ? 'Quỹ ngày (Tham khảo)' : 'Tổng lương ngày (D)'}
+                    </th>
+                    {visibleEmployees.map(emp => (
                       <th key={emp.id} className="py-2.5 px-3 text-right whitespace-nowrap">
-                        {emp.hoTen} ({emp.vaiTro === 'CHINH' ? 'C' : 'P'})
+                        {isEmployee ? `Tiền công: ${emp.hoTen}` : `${emp.hoTen} (${emp.vaiTro === 'CHINH' ? 'C' : 'P'})`}
                       </th>
                     ))}
-                    <th className="py-2.5 px-3 text-center whitespace-nowrap">Kiểm tra (V)</th>
+                    {!isEmployee && (
+                      <th className="py-2.5 px-3 text-center whitespace-nowrap">Kiểm tra (V)</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100 font-mono">
-                  {monthRecords.map(rec => {
+                  {monthRecords.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={5 + visibleEmployees.length + (!isEmployee ? 1 : 0)}
+                        className="py-12 text-center text-stone-400 font-sans italic text-xs"
+                      >
+                        Chưa có dữ liệu chấm công trong tháng {selectedMonth}. CSDL đang ở trạng thái trắng (0 bản ghi) để bạn kiểm thử.
+                      </td>
+                    </tr>
+                  ) : (
+                    monthRecords.map(rec => {
                     const sumRow = rec.chiTiet.reduce((s, c) => s + c.luongNhanDuoc, 0);
                     const isMatch = sumRow === rec.tongLuongNgay;
 
@@ -870,7 +1063,7 @@ export const MonthlyPayrollView: React.FC = () => {
                         <td className="py-2 px-3 text-right font-black text-orange-600">
                           {formatVND(rec.tongLuongNgay)}
                         </td>
-                        {employees.map(emp => {
+                        {visibleEmployees.map(emp => {
                           const detail = rec.chiTiet.find(c => c.nhanVienId === emp.id);
                           const isPresent = detail && detail.coMat;
                           return (
@@ -884,20 +1077,22 @@ export const MonthlyPayrollView: React.FC = () => {
                             </td>
                           );
                         })}
-                        <td className="py-2 px-3 text-center">
-                          {isMatch ? (
-                            <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold font-sans">
-                              Khớp
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded font-bold font-sans">
-                              Lệch
-                            </span>
-                          )}
-                        </td>
+                        {!isEmployee && (
+                          <td className="py-2 px-3 text-center">
+                            {isMatch ? (
+                              <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold font-sans">
+                                Khớp
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded font-bold font-sans">
+                                Lệch
+                              </span>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     );
-                  })}
+                  }))}
                 </tbody>
               </table>
             </div>

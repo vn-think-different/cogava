@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Edit3,
   Info,
+  ShieldCheck,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -28,6 +29,7 @@ export const DailyAttendanceView: React.FC = () => {
   const {
     attendanceRecords,
     employees,
+    teams,
     configs,
     getConfigForDate,
     saveDailyAttendance,
@@ -38,6 +40,21 @@ export const DailyAttendanceView: React.FC = () => {
 
   // Current selected date (Default to 2026-09-13 or today)
   const [selectedDate, setSelectedDate] = useState<string>('2026-09-13');
+  
+  // Selected Team: For DOI_TRUONG locked to their team, for ADMIN selectable
+  const [selectedTeamId, setSelectedTeamId] = useState<string>(() => {
+    if (currentUser.vaiTro === 'DOI_TRUONG' && currentUser.doiId) {
+      return currentUser.doiId;
+    }
+    return teams[0]?.id || 'doi-1';
+  });
+
+  const currentTeamId = currentUser.vaiTro === 'DOI_TRUONG'
+    ? (currentUser.doiId || 'doi-1')
+    : (currentUser.vaiTro === 'NHAN_VIEN' ? (currentUser.doiId || 'doi-1') : selectedTeamId);
+
+  const currentTeam = teams.find(t => t.id === currentTeamId);
+
   const [chickenCount, setChickenCount] = useState<string>('1200');
   const [customUnitPrice, setCustomUnitPrice] = useState<string>('');
   const [priceOverrideReason, setPriceOverrideReason] = useState<string>('');
@@ -61,17 +78,38 @@ export const DailyAttendanceView: React.FC = () => {
     return effectiveConfig.donGiaBinhQuan;
   }, [showOverridePrice, customUnitPrice, effectiveConfig]);
 
-  // Existing record for this date (if any)
+  // Existing record for this date & team (if any)
   const existingRecord = useMemo(() => {
-    return attendanceRecords.find(r => r.ngay === selectedDate);
-  }, [attendanceRecords, selectedDate]);
+    return attendanceRecords.find(
+      r => r.ngay === selectedDate && (r.doiId === currentTeamId || (!r.doiId && currentTeamId === 'doi-1'))
+    );
+  }, [attendanceRecords, selectedDate, currentTeamId]);
 
   // Check if this date is locked
   const isLocked = existingRecord?.trangThai === 'DA_CHOT';
   const isEmployee = currentUser.vaiTro === 'NHAN_VIEN';
   const canEdit = !isEmployee && (!isLocked || currentUser.vaiTro === 'ADMIN');
 
-  // Load record data when date changes
+  // Logged-in employee (for data isolation when role is NHAN_VIEN)
+  const loggedInEmployee = useMemo(() => {
+    if (!isEmployee) return null;
+    return (
+      employees.find(e => e.id === currentUser.nhanVienId) ||
+      employees.find(
+        e => e.hoTen.trim().toLowerCase() === currentUser.tenHienThi.trim().toLowerCase()
+      ) ||
+      employees[0]
+    );
+  }, [isEmployee, currentUser, employees]);
+
+  // Filter employees belonging to the selected team
+  const teamEmployees = useMemo(() => {
+    return employees.filter(
+      e => e.doiId === currentTeamId || (!e.doiId && currentTeamId === 'doi-1')
+    );
+  }, [employees, currentTeamId]);
+
+  // Load record data when date or team changes
   useEffect(() => {
     if (existingRecord) {
       setChickenCount(String(existingRecord.soGaBatDuoc));
@@ -88,22 +126,22 @@ export const DailyAttendanceView: React.FC = () => {
       const present = existingRecord.chiTiet.filter(c => c.coMat).map(c => c.nhanVienId);
       setSelectedEmpIds(present);
     } else {
-      // Default: 1000 chickens and select all active employees
+      // Default: 1100 chickens and select all active employees in this team
       setChickenCount('1100');
       setShowOverridePrice(false);
       setCustomUnitPrice('');
       setPriceOverrideReason('');
-      setSelectedEmpIds(employees.filter(e => e.trangThai === 'DANG_LAM').map(e => e.id));
+      setSelectedEmpIds(teamEmployees.filter(e => e.trangThai === 'DANG_LAM').map(e => e.id));
     }
     setSaveStatus({ type: null, message: '' });
-  }, [selectedDate, existingRecord, effectiveConfig, employees]);
+  }, [selectedDate, existingRecord, effectiveConfig, teamEmployees]);
 
-  // Active employees
+  // Active employees in this team
   const activeEmployees = useMemo(() => {
-    return employees.filter(
+    return teamEmployees.filter(
       e => e.trangThai === 'DANG_LAM' || selectedEmpIds.includes(e.id)
     );
-  }, [employees, selectedEmpIds]);
+  }, [teamEmployees, selectedEmpIds]);
 
   // Run real-time calculation preview
   const calculationPreview = useMemo(() => {
@@ -171,6 +209,7 @@ export const DailyAttendanceView: React.FC = () => {
 
     const res = saveDailyAttendance({
       ngay: selectedDate,
+      doiId: currentTeamId,
       soGa: soGaNum,
       donGia: activeUnitPrice,
       ghiChuDonGia: showOverridePrice ? priceOverrideReason : undefined,
@@ -283,6 +322,88 @@ export const DailyAttendanceView: React.FC = () => {
               </button>
             )}
           </div>
+        </div>
+
+        {/* Team Selector & Phân quyền chấm công theo Đội */}
+        <div className="mt-4 pt-3.5 border-t border-stone-100">
+          {currentUser.vaiTro === 'ADMIN' ? (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-stone-50 p-3 rounded-xl border border-stone-200/80">
+              <div className="flex items-center gap-2">
+                <Users2 className="w-4 h-4 text-orange-600 flex-shrink-0" />
+                <div>
+                  <span className="text-xs font-bold text-stone-900 block">
+                    Đội bắt gà chấm công:
+                  </span>
+                  <span className="text-[10px] text-stone-500">
+                    Chọn đội để chấm công hoặc xem bảng chấm công từng đội
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {teams.map(team => {
+                  const isSelected = team.id === currentTeamId;
+                  const memberCount = employees.filter(e => e.doiId === team.id && e.trangThai === 'DANG_LAM').length;
+                  return (
+                    <button
+                      key={team.id}
+                      type="button"
+                      onClick={() => setSelectedTeamId(team.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        isSelected
+                          ? 'bg-orange-500 text-white shadow-xs'
+                          : 'bg-white text-stone-700 hover:bg-stone-100 border border-stone-200'
+                      }`}
+                    >
+                      <span>{team.tenDoi}</span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                          isSelected ? 'bg-orange-700 text-white' : 'bg-stone-100 text-stone-600'
+                        }`}
+                      >
+                        {memberCount} NV
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : currentUser.vaiTro === 'DOI_TRUONG' ? (
+            <div className="flex items-center justify-between bg-sky-50/80 border border-sky-200 p-3 rounded-xl text-xs text-sky-950">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded-lg bg-sky-500 text-white">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-sm text-sky-900">
+                      {currentTeam?.tenDoi || 'Đội của bạn'}
+                    </span>
+                    {currentTeam?.khuVuc && (
+                      <span className="text-[10px] font-semibold text-sky-700 bg-sky-100 px-2 py-0.5 rounded border border-sky-200">
+                        {currentTeam.khuVuc}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-sky-700 mt-0.5">
+                    Đội trưởng <strong>{currentUser.tenHienThi}</strong> phụ trách chấm công cho {teamEmployees.length} nhân viên trong đội của mình.
+                  </p>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-sky-800 bg-white px-2.5 py-1 rounded-lg border border-sky-200 shadow-2xs whitespace-nowrap">
+                {activeEmployees.length} nhân viên trong đội
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between bg-stone-50 border border-stone-200 p-2.5 rounded-xl text-xs text-stone-700">
+              <span className="font-semibold">
+                Đội của bạn: <strong>{currentTeam?.tenDoi || 'Đội bắt gà'}</strong>
+              </span>
+              <span className="text-[11px] text-stone-500">
+                Đội trưởng: {currentTeam?.doiTruongTen || 'Đang cập nhật'}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Lock warning for field captain */}
@@ -536,16 +657,22 @@ export const DailyAttendanceView: React.FC = () => {
                     <div className="text-right">
                       {isSelected ? (
                         <div>
-                          <span className="text-base font-extrabold text-stone-900 font-mono block">
-                            {formatVND(wage)}
-                          </span>
+                          {isEmployee && emp.id !== loggedInEmployee?.id ? (
+                            <span className="text-xs font-bold text-stone-400 font-sans block py-0.5">
+                              🔒 Bảo mật
+                            </span>
+                          ) : (
+                            <span className="text-base font-extrabold text-stone-900 font-mono block">
+                              {formatVND(wage)}
+                            </span>
+                          )}
                           <span className="text-[10px] font-medium text-emerald-700 bg-emerald-100/60 px-1.5 py-0.5 rounded">
-                            Có mặt đi làm
+                            {isEmployee && emp.id === loggedInEmployee?.id ? 'Công của bạn' : 'Có mặt đi làm'}
                           </span>
                         </div>
                       ) : (
                         <span className="text-xs font-semibold text-stone-400">
-                          Vắng mặt (0 đ)
+                          {isEmployee && emp.id === loggedInEmployee?.id ? 'Bạn nghỉ (0 đ)' : 'Vắng mặt (0 đ)'}
                         </span>
                       )}
                     </div>
@@ -662,54 +789,67 @@ export const DailyAttendanceView: React.FC = () => {
               </div>
             </div>
 
-            {/* Middle Formula Calculations */}
-            <div className="space-y-2 text-xs bg-stone-50/80 p-3.5 rounded-xl border border-stone-200/60">
-              <div className="flex justify-between items-center">
-                <span className="text-stone-600">Lương TB/người (N = D / M):</span>
-                <span className="font-mono font-bold text-stone-900">
-                  {formatVND(calculationPreview.luongTrungBinhMoiNguoi)}
-                </span>
+            {/* Middle Formula Calculations or Employee Privacy Notice */}
+            {isEmployee ? (
+              <div className="p-3 bg-orange-50/70 border border-orange-200 rounded-xl text-xs text-orange-950 space-y-1">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <ShieldCheck className="w-4 h-4 text-orange-600" />
+                  <span>Bảo mật thu nhập nội bộ</span>
+                </div>
+                <p className="text-[11px] text-stone-600 leading-relaxed">
+                  Hệ thống bảo mật dữ liệu lương của từng nhân viên. Bạn chỉ có quyền xem chi tiết thu nhập ca làm việc của chính bạn.
+                </p>
               </div>
-
-              <div className="flex justify-between items-center">
-                <span className="text-stone-600">Tỷ lệ Lương Phụ / Chính:</span>
-                <span className="font-mono font-bold text-stone-900">
-                  {(effectiveConfig.tyLePhuChinh * 100).toFixed(0)}%
-                </span>
-              </div>
-
-              <div className="flex justify-between items-center text-amber-900 pt-1 border-t border-stone-200/60">
-                <span className="font-semibold">Mỗi suất Lương Phụ (O):</span>
-                <span className="font-mono font-extrabold text-amber-700">
-                  {formatVND(calculationPreview.luong1Phu)}
-                </span>
-              </div>
-
-              <div className="flex justify-between items-center text-orange-900">
-                <span className="font-semibold">Mỗi suất Lương Chính (P):</span>
-                <span className="font-mono font-extrabold text-orange-700">
-                  {formatVND(calculationPreview.luong1Chinh)}
-                </span>
-              </div>
-
-              {calculationPreview.phanDuLamTron > 0 && (
-                <div className="text-[11px] text-stone-500 pt-1 border-t border-stone-200/60 flex items-center justify-between">
-                  <span>Bù dư làm tròn (người Chính đầu tiên):</span>
-                  <span className="font-mono font-bold text-emerald-600">
-                    +{calculationPreview.phanDuLamTron} đ
+            ) : (
+              <div className="space-y-2 text-xs bg-stone-50/80 p-3.5 rounded-xl border border-stone-200/60">
+                <div className="flex justify-between items-center">
+                  <span className="text-stone-600">Lương TB/người (N = D / M):</span>
+                  <span className="font-mono font-bold text-stone-900">
+                    {formatVND(calculationPreview.luongTrungBinhMoiNguoi)}
                   </span>
                 </div>
-              )}
-            </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-stone-600">Tỷ lệ Lương Phụ / Chính:</span>
+                  <span className="font-mono font-bold text-stone-900">
+                    {(effectiveConfig.tyLePhuChinh * 100).toFixed(0)}%
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center text-amber-900 pt-1 border-t border-stone-200/60">
+                  <span className="font-semibold">Mỗi suất Lương Phụ (O):</span>
+                  <span className="font-mono font-extrabold text-amber-700">
+                    {formatVND(calculationPreview.luong1Phu)}
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center text-orange-900">
+                  <span className="font-semibold">Mỗi suất Lương Chính (P):</span>
+                  <span className="font-mono font-extrabold text-orange-700">
+                    {formatVND(calculationPreview.luong1Chinh)}
+                  </span>
+                </div>
+
+                {calculationPreview.phanDuLamTron > 0 && (
+                  <div className="text-[11px] text-stone-500 pt-1 border-t border-stone-200/60 flex items-center justify-between">
+                    <span>Bù dư làm tròn (người Chính đầu tiên):</span>
+                    <span className="font-mono font-bold text-emerald-600">
+                      +{calculationPreview.phanDuLamTron} đ
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* List of payouts for each employee */}
             <div>
               <span className="text-xs font-bold text-stone-700 uppercase tracking-wider block mb-2">
-                Chi tiết lương thực nhận hôm nay:
+                {isEmployee ? 'Tiền công ngày của bạn:' : 'Chi tiết lương thực nhận hôm nay:'}
               </span>
               <div className="space-y-2">
                 {calculationPreview.chiTietLuong
                   .filter(c => c.coMat)
+                  .filter(item => (!isEmployee ? true : item.nhanVienId === loggedInEmployee?.id))
                   .map(item => (
                     <div
                       key={item.nhanVienId}
@@ -737,14 +877,26 @@ export const DailyAttendanceView: React.FC = () => {
                       </span>
                     </div>
                   ))}
+
+                {isEmployee && !calculationPreview.chiTietLuong.some(c => c.nhanVienId === loggedInEmployee?.id && c.coMat) && (
+                  <div className="p-3 bg-stone-50 rounded-xl text-stone-500 text-xs italic text-center border border-stone-200">
+                    Hôm nay bạn không có mặt trong danh sách chấm công ca này.
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Bottom Balance Check (Excel Column V) */}
             <div className="p-3 bg-stone-900 text-white rounded-xl flex items-center justify-between">
-              <span className="text-xs font-bold">Tổng chi lương:</span>
+              <span className="text-xs font-bold">
+                {isEmployee ? 'Tiền công ngày của bạn:' : 'Tổng chi lương:'}
+              </span>
               <span className="text-base font-black text-orange-400 font-mono">
-                {formatVND(calculationPreview.tongLuongThucChia)}
+                {formatVND(
+                  isEmployee
+                    ? calculationPreview.chiTietLuong.find(c => c.nhanVienId === loggedInEmployee?.id && c.coMat)?.luongNhanDuoc || 0
+                    : calculationPreview.tongLuongThucChia
+                )}
               </span>
             </div>
           </div>

@@ -2,26 +2,23 @@ import React, { createContext, useContext, useEffect, useState, useMemo } from '
 import {
   BangChamCongNgay,
   CauHinhLuong,
+  DoiNhanVien,
   HanhDongAudit,
   NhanVien,
   NhatKyThayDoi,
   ThongTinDoanhNghiep,
+  UserAccount,
   UserSession,
-  VaiTroNhanVien,
   VaiTroNguoiDung,
 } from '../types';
-import {
-  INITIAL_ATTENDANCE_RECORDS,
-  INITIAL_AUDIT_LOGS,
-  INITIAL_CONFIGS,
-  INITIAL_EMPLOYEES,
-  THONG_TIN_CONG_TY,
-} from '../data/initialData';
+import { THONG_TIN_CONG_TY } from '../data/initialData';
 import { calculateDailyPayroll } from '../utils/payrollEngine';
 import { getDayOfWeekVN } from '../utils/formatters';
+import { PayrollDatabase, DEFAULT_USER_ACCOUNTS } from '../services/payrollDatabase';
 
 interface SaveAttendanceInput {
   ngay: string;
+  doiId?: string;
   soGa: number;
   donGia: number;
   ghiChuDonGia?: string;
@@ -31,15 +28,36 @@ interface SaveAttendanceInput {
 interface AppContextType {
   companyInfo: ThongTinDoanhNghiep;
   employees: NhanVien[];
+  teams: DoiNhanVien[];
   configs: CauHinhLuong[];
   attendanceRecords: BangChamCongNgay[];
   auditLogs: NhatKyThayDoi[];
+  userAccounts: UserAccount[];
   currentUser: UserSession;
   setCurrentUser: (user: UserSession) => void;
   availableUsers: UserSession[];
   isAuthenticated: boolean;
   login: (user: UserSession) => void;
+  loginWithCredentials: (username: string, password: string) => { success: boolean; message: string; user?: UserSession };
   logout: () => void;
+  
+  // Quản lý Đội nhóm (Teams)
+  addTeam: (data: Omit<DoiNhanVien, 'id' | 'ngayTao'>) => { success: boolean; message: string };
+  updateTeam: (id: string, data: Partial<DoiNhanVien>) => { success: boolean; message: string };
+  deleteTeam: (id: string) => { success: boolean; message: string };
+  assignEmployeeToTeam: (empId: string, teamId: string) => void;
+
+  // Quản lý tài khoản & phân quyền
+  updateCurrentUserAvatar: (avatar: string) => { success: boolean; message: string };
+  updateCurrentUserProfile: (data: Partial<Pick<UserAccount, 'tenHienThi' | 'sdt' | 'email' | 'soCccd' | 'cccdNgayCap' | 'cccdNoiCap' | 'cccdMatTruoc' | 'cccdMatSau'>>) => { success: boolean; message: string };
+  changeUserPassword: (matKhauCu: string, matKhauMoi: string) => { success: boolean; message: string };
+  adminResetUserPassword: (userId: string, newPassword?: string) => { success: boolean; message: string };
+  addUserAccount: (data: Omit<UserAccount, 'id' | 'ngayTao'>) => { success: boolean; message: string };
+  deleteUserAccount: (userId: string) => { success: boolean; message: string };
+
+  // Quản lý CSDL bảng lương: CSDL Trắng để kiểm thử & nạp mẫu
+  clearAttendanceToBlank: () => { success: boolean; message: string };
+  loadSampleExcelAttendance: () => void;
   
   // Nhận diện và chuyển đổi chế độ Máy tính (Desktop) & Điện thoại (Mobile)
   deviceMode: 'auto' | 'desktop' | 'mobile';
@@ -68,111 +86,140 @@ interface AppContextType {
   resetToSampleData: () => void;
 }
 
-const LOCAL_STORAGE_KEY_PREFIX = 'cogava_payroll_v1_';
-
-export const AVAILABLE_USERS: UserSession[] = [
-  {
-    id: 'usr-admin',
-    tenHienThi: 'Thạch',
-    vaiTro: 'ADMIN',
-  },
-  {
-    id: 'usr-captain',
-    tenHienThi: 'Lê Đội Trưởng',
-    vaiTro: 'DOI_TRUONG',
-  },
-  {
-    id: 'usr-kien',
-    tenHienThi: 'Kiên',
-    vaiTro: 'NHAN_VIEN',
-    nhanVienId: 'emp-kien',
-  },
-  {
-    id: 'usr-dat',
-    tenHienThi: 'Đạt',
-    vaiTro: 'NHAN_VIEN',
-    nhanVienId: 'emp-dat',
-  },
-];
+const LOCAL_STORAGE_SESSION_KEY = 'cogava_payroll_auth_session';
 
 const AppContext = createContext<AppContextType | null>(null);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // 1. Employees state
+  // 1. User Accounts State (CSDL Tài khoản người dùng)
+  const [userAccounts, setUserAccounts] = useState<UserAccount[]>(() => {
+    return PayrollDatabase.getUserAccounts();
+  });
+
+  // 2. Employees state (CSDL Nhân viên)
   const [employees, setEmployees] = useState<NhanVien[]>(() => {
-    const saved = localStorage.getItem(LOCAL_STORAGE_KEY_PREFIX + 'employees');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
-    }
-    return INITIAL_EMPLOYEES;
+    return PayrollDatabase.getEmployees();
   });
 
-  // 2. Configs state
+  // 2.1 Teams state (CSDL Đội nhóm)
+  const [teams, setTeams] = useState<DoiNhanVien[]>(() => {
+    return PayrollDatabase.getTeams();
+  });
+
+  // 3. Configs state (CSDL Cấu hình đơn giá & công thức)
   const [configs, setConfigs] = useState<CauHinhLuong[]>(() => {
-    const saved = localStorage.getItem(LOCAL_STORAGE_KEY_PREFIX + 'configs');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
-    }
-    return INITIAL_CONFIGS;
+    return PayrollDatabase.getConfigs();
   });
 
-  // 3. Attendance records state
+  // 4. Attendance records state (CSDL Bảng chấm công ngày - MẶC ĐỊNH LÀ CSDL TRẮNG ĐỂ KIỂM THỬ)
   const [attendanceRecords, setAttendanceRecords] = useState<BangChamCongNgay[]>(() => {
-    const saved = localStorage.getItem(LOCAL_STORAGE_KEY_PREFIX + 'attendance');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
-    }
-    return INITIAL_ATTENDANCE_RECORDS;
+    return PayrollDatabase.getAttendanceRecords();
   });
 
-  // 4. Audit logs state
+  // 5. Audit logs state (CSDL Nhật ký kiểm toán)
   const [auditLogs, setAuditLogs] = useState<NhatKyThayDoi[]>(() => {
-    const saved = localStorage.getItem(LOCAL_STORAGE_KEY_PREFIX + 'audit');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
-    }
-    return INITIAL_AUDIT_LOGS;
+    return PayrollDatabase.getAuditLogs();
   });
 
-  // 5. Authentication & Current User session
+  // 6. Authentication & Current User session
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem(LOCAL_STORAGE_KEY_PREFIX + 'isAuthenticated') === 'true';
+    return localStorage.getItem(LOCAL_STORAGE_SESSION_KEY + '_active') === 'true';
   });
 
   const [currentUser, setCurrentUserState] = useState<UserSession>(() => {
-    const saved = localStorage.getItem(LOCAL_STORAGE_KEY_PREFIX + 'currentUser');
+    const saved = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY + '_user');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed.id === 'usr-admin') {
-          return { ...parsed, tenHienThi: 'Thạch' };
-        }
-        return parsed;
-      } catch (e) { console.error(e); }
+        if (parsed && parsed.id) return parsed;
+      } catch (e) {
+        console.error(e);
+      }
     }
-    return AVAILABLE_USERS[0];
+    // Default session: Thạch (Admin)
+    const adminAccount = userAccounts.find(u => u.vaiTro === 'ADMIN') || DEFAULT_USER_ACCOUNTS[0];
+    return {
+      id: adminAccount.id,
+      username: adminAccount.username,
+      tenHienThi: adminAccount.tenHienThi,
+      vaiTro: adminAccount.vaiTro,
+      doiId: adminAccount.doiId,
+      avatar: adminAccount.avatar,
+    };
   });
+
+  // Dynamic available users derived from userAccounts
+  const availableUsers: UserSession[] = useMemo(() => {
+    return userAccounts.map(u => ({
+      id: u.id,
+      username: u.username,
+      tenHienThi: u.tenHienThi,
+      vaiTro: u.vaiTro,
+      nhanVienId: u.nhanVienId,
+      doiId: u.doiId,
+      avatar: u.avatar,
+    }));
+  }, [userAccounts]);
 
   const setCurrentUser = (user: UserSession) => {
     setCurrentUserState(user);
-    localStorage.setItem(LOCAL_STORAGE_KEY_PREFIX + 'currentUser', JSON.stringify(user));
+    localStorage.setItem(LOCAL_STORAGE_SESSION_KEY + '_user', JSON.stringify(user));
   };
 
   const login = (user: UserSession) => {
     setCurrentUser(user);
     setIsAuthenticated(true);
-    localStorage.setItem(LOCAL_STORAGE_KEY_PREFIX + 'isAuthenticated', 'true');
-    localStorage.setItem(LOCAL_STORAGE_KEY_PREFIX + 'currentUser', JSON.stringify(user));
+    localStorage.setItem(LOCAL_STORAGE_SESSION_KEY + '_active', 'true');
+    localStorage.setItem(LOCAL_STORAGE_SESSION_KEY + '_user', JSON.stringify(user));
+  };
+
+  const loginWithCredentials = (
+    username: string,
+    passwordInput: string
+  ): { success: boolean; message: string; user?: UserSession } => {
+    const cleanUser = username.trim().toLowerCase();
+    const account = userAccounts.find(u => u.username.toLowerCase() === cleanUser);
+
+    if (!account) {
+      return {
+        success: false,
+        message: `Tài khoản "${username}" không tồn tại trong hệ thống! Vui lòng kiểm tra lại.`,
+      };
+    }
+
+    if (account.password !== passwordInput) {
+      return {
+        success: false,
+        message: 'Mật khẩu không chính xác! Vui lòng thử lại hoặc liên hệ Quản trị viên.',
+      };
+    }
+
+    const session: UserSession = {
+      id: account.id,
+      username: account.username,
+      tenHienThi: account.tenHienThi,
+      vaiTro: account.vaiTro,
+      nhanVienId: account.nhanVienId,
+      doiId: account.doiId,
+      avatar: account.avatar,
+    };
+
+    login(session);
+    return {
+      success: true,
+      message: `Đăng nhập thành công! Chào mừng ${account.tenHienThi}.`,
+      user: session,
+    };
   };
 
   const logout = () => {
     setIsAuthenticated(false);
-    localStorage.removeItem(LOCAL_STORAGE_KEY_PREFIX + 'isAuthenticated');
+    localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY + '_active');
   };
 
-  // 6. Device Recognition (Desktop vs Mobile)
+  // 7. Device Recognition (Desktop vs Mobile)
   const [deviceMode, setDeviceModeState] = useState<'auto' | 'desktop' | 'mobile'>(() => {
-    const saved = localStorage.getItem(LOCAL_STORAGE_KEY_PREFIX + 'deviceMode');
+    const saved = localStorage.getItem('cogava_device_mode');
     return (saved as 'auto' | 'desktop' | 'mobile') || 'auto';
   });
 
@@ -188,36 +235,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const setDeviceMode = (mode: 'auto' | 'desktop' | 'mobile') => {
     setDeviceModeState(mode);
-    localStorage.setItem(LOCAL_STORAGE_KEY_PREFIX + 'deviceMode', mode);
+    localStorage.setItem('cogava_device_mode', mode);
   };
 
-  // Active view: if user forces 'desktop', it will never show mobile bottom bar or mobile drawers
   const isMobileView = useMemo(() => {
     if (deviceMode === 'desktop') return false;
     if (deviceMode === 'mobile') return true;
-    return windowWidth < 768; // Auto mode: only true if window is physically smaller than 768px
+    return windowWidth < 768;
   }, [deviceMode, windowWidth]);
 
-  // Persistence effects
+  // Sync to database
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_KEY_PREFIX + 'employees', JSON.stringify(employees));
+    PayrollDatabase.saveUserAccounts(userAccounts);
+  }, [userAccounts]);
+
+  useEffect(() => {
+    PayrollDatabase.saveEmployees(employees);
   }, [employees]);
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_KEY_PREFIX + 'configs', JSON.stringify(configs));
+    PayrollDatabase.saveConfigs(configs);
   }, [configs]);
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_KEY_PREFIX + 'attendance', JSON.stringify(attendanceRecords));
+    PayrollDatabase.saveAttendanceRecords(attendanceRecords);
   }, [attendanceRecords]);
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_KEY_PREFIX + 'audit', JSON.stringify(auditLogs));
+    PayrollDatabase.saveAuditLogs(auditLogs);
   }, [auditLogs]);
-
-  useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_KEY_PREFIX + 'currentUser', JSON.stringify(currentUser));
-  }, [currentUser]);
 
   // Helper tạo audit log
   const createAuditLog = (
@@ -245,10 +291,182 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAuditLogs(prev => [newLog, ...prev]);
   };
 
-  /**
-   * Lấy cấu hình áp dụng cho ngày dateStr (Mục 5.2):
-   * Lấy bản ghi có hieu_luc_tu_ngay lớn nhất nhưng vẫn <= dateStr
-   */
+  // Quản lý Avatar & Hồ sơ cá nhân
+  const updateCurrentUserAvatar = (avatar: string): { success: boolean; message: string } => {
+    const result = PayrollDatabase.updateAvatar(currentUser.id, avatar);
+    if (result.success && result.updatedUser) {
+      setUserAccounts(prev =>
+        prev.map(u => (u.id === currentUser.id ? { ...u, avatar } : u))
+      );
+      const updatedSession: UserSession = {
+        ...currentUser,
+        avatar,
+      };
+      setCurrentUser(updatedSession);
+      createAuditLog(
+        'UserAccount',
+        currentUser.id,
+        'SUA',
+        `Người dùng ${currentUser.tenHienThi} cập nhật ảnh đại diện mới`,
+        { avatar: currentUser.avatar },
+        { avatar }
+      );
+    }
+    return result;
+  };
+
+  const updateCurrentUserProfile = (
+    data: Partial<Pick<UserAccount, 'tenHienThi' | 'sdt' | 'email' | 'soCccd' | 'cccdNgayCap' | 'cccdNoiCap' | 'cccdMatTruoc' | 'cccdMatSau'>>
+  ): { success: boolean; message: string } => {
+    const result = PayrollDatabase.updateProfile(currentUser.id, data);
+    if (result.success && result.updatedUser) {
+      setUserAccounts(prev =>
+        prev.map(u => (u.id === currentUser.id ? { ...u, ...data } : u))
+      );
+      setCurrentUser(prev => ({
+        ...prev,
+        ...data,
+      }));
+
+      // Đồng bộ sang bảng nhân viên nếu user được liên kết hồ sơ nhân viên
+      if (currentUser.nhanVienId) {
+        setEmployees(prevEmps => {
+          const updated = prevEmps.map(emp => {
+            if (emp.id === currentUser.nhanVienId) {
+              return {
+                ...emp,
+                ...(data.tenHienThi ? { hoTen: data.tenHienThi } : {}),
+                ...(data.sdt !== undefined ? { sdt: data.sdt } : {}),
+                ...(data.soCccd !== undefined ? { soCccd: data.soCccd } : {}),
+                ...(data.cccdNgayCap !== undefined ? { cccdNgayCap: data.cccdNgayCap } : {}),
+                ...(data.cccdNoiCap !== undefined ? { cccdNoiCap: data.cccdNoiCap } : {}),
+                ...(data.cccdMatTruoc !== undefined ? { cccdMatTruoc: data.cccdMatTruoc } : {}),
+                ...(data.cccdMatSau !== undefined ? { cccdMatSau: data.cccdMatSau } : {}),
+              };
+            }
+            return emp;
+          });
+          PayrollDatabase.saveEmployees(updated);
+          return updated;
+        });
+      }
+
+      createAuditLog(
+        'UserAccount',
+        currentUser.id,
+        'SUA',
+        `Cập nhật thông tin tài khoản & CCCD ${currentUser.tenHienThi}`,
+        null,
+        { ...data }
+      );
+    }
+    return result;
+  };
+
+  // Đổi mật khẩu
+  const changeUserPassword = (
+    matKhauCu: string,
+    matKhauMoi: string
+  ): { success: boolean; message: string } => {
+    const result = PayrollDatabase.changePassword(currentUser.id, matKhauCu, matKhauMoi);
+    if (result.success) {
+      setUserAccounts(PayrollDatabase.getUserAccounts());
+      createAuditLog(
+        'UserAccount',
+        currentUser.id,
+        'SUA',
+        `Người dùng ${currentUser.tenHienThi} đã thay đổi mật khẩu đăng nhập`
+      );
+    }
+    return result;
+  };
+
+  // Admin đặt lại mật khẩu cho tài khoản
+  const adminResetUserPassword = (
+    userId: string,
+    newPassword = '123456'
+  ): { success: boolean; message: string } => {
+    if (currentUser.vaiTro !== 'ADMIN') {
+      return { success: false, message: 'Chỉ Quản trị viên mới có quyền đặt lại mật khẩu!' };
+    }
+    const result = PayrollDatabase.adminResetPassword(userId, newPassword);
+    if (result.success) {
+      setUserAccounts(PayrollDatabase.getUserAccounts());
+      createAuditLog(
+        'UserAccount',
+        userId,
+        'SUA',
+        `Admin ${currentUser.tenHienThi} đặt lại mật khẩu cho tài khoản ${userId} về mặc định (${newPassword})`
+      );
+    }
+    return result;
+  };
+
+  // Admin thêm tài khoản mới
+  const addUserAccount = (
+    data: Omit<UserAccount, 'id' | 'ngayTao'>
+  ): { success: boolean; message: string } => {
+    if (currentUser.vaiTro !== 'ADMIN') {
+      return { success: false, message: 'Chỉ Quản trị viên mới có quyền tạo tài khoản người dùng!' };
+    }
+    const result = PayrollDatabase.addUserAccount(data);
+    if (result.success && result.user) {
+      setUserAccounts(PayrollDatabase.getUserAccounts());
+      createAuditLog(
+        'UserAccount',
+        result.user.id,
+        'TAO',
+        `Admin tạo tài khoản mới: "${result.user.username}" (${result.user.tenHienThi} - ${result.user.vaiTro})`
+      );
+    }
+    return result;
+  };
+
+  // Admin xóa tài khoản
+  const deleteUserAccount = (userId: string): { success: boolean; message: string } => {
+    if (currentUser.vaiTro !== 'ADMIN') {
+      return { success: false, message: 'Chỉ Quản trị viên mới có quyền xóa tài khoản!' };
+    }
+    const target = userAccounts.find(u => u.id === userId);
+    const result = PayrollDatabase.deleteUserAccount(userId);
+    if (result.success) {
+      setUserAccounts(PayrollDatabase.getUserAccounts());
+      createAuditLog(
+        'UserAccount',
+        userId,
+        'XOA',
+        `Admin xóa tài khoản người dùng: ${target?.tenHienThi || userId}`
+      );
+    }
+    return result;
+  };
+
+  // Xóa sạch CSDL chấm công về CSDL trắng để kiểm thử
+  const clearAttendanceToBlank = (): { success: boolean; message: string } => {
+    const res = PayrollDatabase.clearAttendanceToBlank();
+    setAttendanceRecords([]);
+    createAuditLog(
+      'BangChamCongNgay',
+      'all',
+      'XOA',
+      'Xóa sạch toàn bộ CSDL chấm công để chuyển sang chế độ CSDL Trắng (0 bản ghi) phục vụ kiểm thử tính toán độc lập.'
+    );
+    return res;
+  };
+
+  // Nạp lại dữ liệu mẫu Excel 28 ngày
+  const loadSampleExcelAttendance = () => {
+    const sampleRecords = PayrollDatabase.loadSampleExcelAttendance();
+    setAttendanceRecords(sampleRecords);
+    createAuditLog(
+      'BangChamCongNgay',
+      'excel-import',
+      'TAO',
+      'Nạp 28 bản ghi chấm công mẫu từ file Excel Bang_luong_COGAVA để phục vụ đối chiếu công thức.'
+    );
+  };
+
+  // Lấy cấu hình áp dụng cho ngày
   const getConfigForDate = (dateStr: string): CauHinhLuong => {
     const validConfigs = configs
       .filter(c => c.hieuLucTuNgay <= dateStr)
@@ -257,11 +475,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (validConfigs.length > 0) {
       return validConfigs[0];
     }
-    // Fallback nếu ngày quá cũ: lấy cấu hình có ngày nhỏ nhất
-    return [...configs].sort((a, b) => a.hieuLucTuNgay.localeCompare(b.hieuLucTuNgay))[0] || INITIAL_CONFIGS[0];
+    return [...configs].sort((a, b) => a.hieuLucTuNgay.localeCompare(b.hieuLucTuNgay))[0] || configs[0];
   };
 
-  // Thêm cấu hình mới theo hiệu lực
+  // Thêm cấu hình mới
   const addConfig = (data: Omit<CauHinhLuong, 'id' | 'ngayTao' | 'nguoiTao'>) => {
     const now = new Date();
     const dateStr = now.toISOString().replace('T', ' ').substring(0, 19);
@@ -283,18 +500,109 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
+  // Quản lý Đội nhóm (Teams)
+  const addTeam = (data: Omit<DoiNhanVien, 'id' | 'ngayTao'>): { success: boolean; message: string } => {
+    if (currentUser.vaiTro !== 'ADMIN') {
+      return { success: false, message: 'Chỉ Quản trị viên mới có quyền tạo Đội mới!' };
+    }
+    const res = PayrollDatabase.addTeam(data);
+    if (res.success) {
+      setTeams(PayrollDatabase.getTeams());
+      createAuditLog('DoiNhanVien', res.team?.id || 'new', 'TAO', `Tạo đội mới: "${data.tenDoi}"`);
+    }
+    return res;
+  };
+
+  const updateTeam = (id: string, data: Partial<DoiNhanVien>): { success: boolean; message: string } => {
+    if (currentUser.vaiTro !== 'ADMIN') {
+      return { success: false, message: 'Chỉ Quản trị viên mới có quyền sửa thông tin Đội!' };
+    }
+    const res = PayrollDatabase.updateTeam(id, data);
+    if (res.success) {
+      setTeams(PayrollDatabase.getTeams());
+      createAuditLog('DoiNhanVien', id, 'SUA', `Cập nhật thông tin đội ${id}`);
+    }
+    return res;
+  };
+
+  const deleteTeam = (id: string): { success: boolean; message: string } => {
+    if (currentUser.vaiTro !== 'ADMIN') {
+      return { success: false, message: 'Chỉ Quản trị viên mới có quyền xóa Đội!' };
+    }
+    const res = PayrollDatabase.deleteTeam(id);
+    if (res.success) {
+      setTeams(PayrollDatabase.getTeams());
+      createAuditLog('DoiNhanVien', id, 'XOA', `Xóa đội ${id}`);
+    }
+    return res;
+  };
+
+  const assignEmployeeToTeam = (empId: string, teamId: string) => {
+    setEmployees(prev => {
+      const updated = prev.map(emp => (emp.id === empId ? { ...emp, doiId: teamId } : emp));
+      PayrollDatabase.saveEmployees(updated);
+      return updated;
+    });
+    setUserAccounts(prev => {
+      const updated = prev.map(u => (u.nhanVienId === empId ? { ...u, doiId: teamId } : u));
+      PayrollDatabase.saveUserAccounts(updated);
+      return updated;
+    });
+    const targetEmp = employees.find(e => e.id === empId);
+    const targetTeam = teams.find(t => t.id === teamId);
+    createAuditLog(
+      'NhanVien',
+      empId,
+      'SUA',
+      `Phân công nhân viên ${targetEmp?.hoTen || empId} vào đội "${targetTeam?.tenDoi || teamId}"`
+    );
+  };
+
   // Quản lý nhân viên
   const addEmployee = (data: Omit<NhanVien, 'id'>) => {
+    const newId = `emp-${Date.now()}`;
+    const assignedTeam = data.doiId || (teams[0]?.id || 'doi-1');
     const newEmp: NhanVien = {
       ...data,
-      id: `emp-${Date.now()}`,
+      id: newId,
+      doiId: assignedTeam,
     };
-    setEmployees(prev => [...prev, newEmp]);
+    setEmployees(prev => {
+      const updated = [...prev, newEmp];
+      PayrollDatabase.saveEmployees(updated);
+      return updated;
+    });
+
+    // Tự động tạo tài khoản người dùng đăng nhập cho nhân viên mới
+    const rawUsername = data.hoTen
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '') || `nv${Date.now().toString().slice(-4)}`;
+
+    const userAccountData: Omit<UserAccount, 'id' | 'ngayTao'> = {
+      username: rawUsername,
+      password: '123456',
+      tenHienThi: data.hoTen,
+      vaiTro: 'NHAN_VIEN',
+      nhanVienId: newId,
+      doiId: assignedTeam,
+      sdt: data.sdt,
+      soCccd: data.soCccd,
+      cccdNgayCap: data.cccdNgayCap,
+      cccdNoiCap: data.cccdNoiCap,
+      cccdMatTruoc: data.cccdMatTruoc,
+      cccdMatSau: data.cccdMatSau,
+      avatar: 'preset-worker-dat',
+    };
+    PayrollDatabase.addUserAccount(userAccountData);
+    setUserAccounts(PayrollDatabase.getUserAccounts());
+
     createAuditLog(
       'NhanVien',
       newEmp.id,
       'TAO',
-      `Thêm nhân viên mới: ${newEmp.hoTen} (${newEmp.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'})`,
+      `Thêm nhân viên mới: ${newEmp.hoTen} (${newEmp.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'}). Đội: ${assignedTeam}. Đã cấp tài khoản: "${rawUsername}" / MK: 123456`,
       null,
       { ...newEmp }
     );
@@ -304,9 +612,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const currentEmp = employees.find(e => e.id === id);
     if (!currentEmp) return;
 
-    setEmployees(prev =>
-      prev.map(emp => (emp.id === id ? { ...emp, ...data } : emp))
-    );
+    setEmployees(prev => {
+      const updated = prev.map(emp => (emp.id === id ? { ...emp, ...data } : emp));
+      PayrollDatabase.saveEmployees(updated);
+      return updated;
+    });
+
+    // Đồng bộ sang tài khoản nếu đổi thông tin (đội, họ tên, sđt, CCCD)
+    setUserAccounts(prev => {
+      const updated = prev.map(u => {
+        if (u.nhanVienId === id) {
+          return {
+            ...u,
+            ...(data.doiId ? { doiId: data.doiId } : {}),
+            ...(data.hoTen ? { tenHienThi: data.hoTen } : {}),
+            ...(data.sdt !== undefined ? { sdt: data.sdt } : {}),
+            ...(data.soCccd !== undefined ? { soCccd: data.soCccd } : {}),
+            ...(data.cccdNgayCap !== undefined ? { cccdNgayCap: data.cccdNgayCap } : {}),
+            ...(data.cccdNoiCap !== undefined ? { cccdNoiCap: data.cccdNoiCap } : {}),
+            ...(data.cccdMatTruoc !== undefined ? { cccdMatTruoc: data.cccdMatTruoc } : {}),
+            ...(data.cccdMatSau !== undefined ? { cccdMatSau: data.cccdMatSau } : {}),
+          };
+        }
+        return u;
+      });
+      PayrollDatabase.saveUserAccounts(updated);
+      return updated;
+    });
+
+    if (currentUser.nhanVienId === id) {
+      setCurrentUser(prev => ({
+        ...prev,
+        ...(data.hoTen ? { tenHienThi: data.hoTen } : {}),
+        ...(data.doiId ? { doiId: data.doiId } : {}),
+        ...(data.soCccd !== undefined ? { soCccd: data.soCccd } : {}),
+        ...(data.cccdNgayCap !== undefined ? { cccdNgayCap: data.cccdNgayCap } : {}),
+        ...(data.cccdNoiCap !== undefined ? { cccdNoiCap: data.cccdNoiCap } : {}),
+        ...(data.cccdMatTruoc !== undefined ? { cccdMatTruoc: data.cccdMatTruoc } : {}),
+        ...(data.cccdMatSau !== undefined ? { cccdMatSau: data.cccdMatSau } : {}),
+      }));
+    }
+
     createAuditLog(
       'NhanVien',
       id,
@@ -324,8 +670,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newStatus = currentEmp.trangThai === 'DANG_LAM' ? 'DA_NGHI' : 'DANG_LAM';
     const todayStr = new Date().toISOString().substring(0, 10);
 
-    setEmployees(prev =>
-      prev.map(emp =>
+    setEmployees(prev => {
+      const updated = prev.map(emp =>
         emp.id === id
           ? {
               ...emp,
@@ -333,8 +679,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               ngayNghiViec: newStatus === 'DA_NGHI' ? todayStr : null,
             }
           : emp
-      )
-    );
+      );
+      PayrollDatabase.saveEmployees(updated);
+      return updated;
+    });
     createAuditLog(
       'NhanVien',
       id,
@@ -354,11 +702,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Khoá sổ tháng
   const lockMonth = (yearMonth: string) => {
-    setAttendanceRecords(prev =>
-      prev.map(rec =>
+    setAttendanceRecords(prev => {
+      const updated = prev.map(rec =>
         rec.ngay.startsWith(yearMonth) ? { ...rec, trangThai: 'DA_CHOT' } : rec
-      )
-    );
+      );
+      PayrollDatabase.saveAttendanceRecords(updated);
+      return updated;
+    });
     createAuditLog(
       'BangChamCongNgay',
       `month-${yearMonth}`,
@@ -369,13 +719,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  // Mở lại sổ tháng (chỉ Admin, bắt buộc ghi lý do vào Audit Log)
+  // Mở lại sổ tháng (chỉ Admin)
   const unlockMonth = (yearMonth: string, lyDo: string) => {
-    setAttendanceRecords(prev =>
-      prev.map(rec =>
+    setAttendanceRecords(prev => {
+      const updated = prev.map(rec =>
         rec.ngay.startsWith(yearMonth) ? { ...rec, trangThai: 'NHAP' } : rec
-      )
-    );
+      );
+      PayrollDatabase.saveAttendanceRecords(updated);
+      return updated;
+    });
     createAuditLog(
       'BangChamCongNgay',
       `month-${yearMonth}`,
@@ -386,18 +738,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  /**
-   * Lưu dữ liệu chấm công & sản lượng theo ngày:
-   * - Tính lương và lưu giá trị snapshot vĩnh viễn (khắc phục rủi ro #1)
-   * - Kiểm tra khoá sổ
-   * - Ghi audit log
-   */
+  // Lưu chấm công ngày (hỗ trợ theo đội)
   const saveDailyAttendance = (input: SaveAttendanceInput): { success: boolean; message: string } => {
-    const { ngay, soGa, donGia, ghiChuDonGia, presentEmployeeIds } = input;
-    const yearMonth = ngay.substring(0, 7);
+    const { ngay, doiId, soGa, donGia, ghiChuDonGia, presentEmployeeIds } = input;
+    const targetDoiId = doiId || currentUser.doiId || 'doi-1';
 
     // Kiểm tra khoá sổ
-    const existing = attendanceRecords.find(r => r.ngay === ngay);
+    const existing = attendanceRecords.find(
+      r => r.ngay === ngay && (r.doiId === targetDoiId || (!r.doiId && targetDoiId === 'doi-1'))
+    );
     if (existing && existing.trangThai === 'DA_CHOT') {
       if (currentUser.vaiTro !== 'ADMIN') {
         return {
@@ -407,11 +756,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // Lấy danh sách nhân viên đang làm (hoặc nhân viên có mặt nếu có nhân viên cũ)
-    const activeEmployees = employees.filter(e => e.trangThai === 'DANG_LAM' || presentEmployeeIds.includes(e.id));
+    // Chỉ nhân viên thuộc đội mới được đưa vào tính toán công thức ngày
+    const teamEmployees = employees.filter(
+      e => e.doiId === targetDoiId || (!e.doiId && targetDoiId === 'doi-1')
+    );
+    const activeEmployees = teamEmployees.filter(
+      e => e.trangThai === 'DANG_LAM' || presentEmployeeIds.includes(e.id)
+    );
     const effectiveConfig = getConfigForDate(ngay);
 
-    // Chuẩn bị đầu vào cho engine
     const engineInput = activeEmployees.map(emp => ({
       id: emp.id,
       hoTen: emp.hoTen,
@@ -419,7 +772,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       coMat: presentEmployeeIds.includes(emp.id),
     }));
 
-    // Chạy engine tính lương COGAVA
     const result = calculateDailyPayroll({
       soGa,
       donGia,
@@ -435,14 +787,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const recordId = existing ? existing.id : `att-${ngay}-${targetDoiId}`;
 
-    const recordId = existing ? existing.id : `att-${ngay}`;
     const newRecord: BangChamCongNgay = {
       id: recordId,
       ngay,
+      doiId: targetDoiId,
       thuTrongTuan: getDayOfWeekVN(ngay),
       soGaBatDuoc: soGa,
-      donGiaApDung: donGia, // Snapshot
+      donGiaApDung: donGia,
       cauHinhId: effectiveConfig.id,
       ghiChuDonGia,
       tongLuongNgay: result.tongLuongNgay,
@@ -456,27 +809,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         hoTen: c.hoTen,
         vaiTro: c.vaiTro,
         coMat: c.coMat,
-        luongNhanDuoc: c.luongNhanDuoc, // Snapshot cố định
+        luongNhanDuoc: c.luongNhanDuoc,
       })),
     };
 
     setAttendanceRecords(prev => {
-      const idx = prev.findIndex(r => r.ngay === ngay);
+      const idx = prev.findIndex(
+        r => r.ngay === ngay && (r.doiId === targetDoiId || (!r.doiId && targetDoiId === 'doi-1'))
+      );
+      let updated: BangChamCongNgay[];
       if (idx >= 0) {
         const copy = [...prev];
         copy[idx] = newRecord;
-        return copy;
+        updated = copy;
+      } else {
+        updated = [...prev, newRecord].sort((a, b) => a.ngay.localeCompare(b.ngay));
       }
-      return [...prev, newRecord].sort((a, b) => a.ngay.localeCompare(b.ngay));
+      PayrollDatabase.saveAttendanceRecords(updated);
+      return updated;
     });
 
     createAuditLog(
       'BangChamCongNgay',
       recordId,
       existing ? 'SUA' : 'TAO',
-      `${existing ? 'Cập nhật' : 'Nhập mới'} chấm công ngày ${ngay} (${soGa.toLocaleString('vi-VN')} con gà, ${presentEmployeeIds.length} người có mặt, quỹ lương: ${result.tongLuongNgay.toLocaleString('vi-VN')}đ)`,
+      `${currentUser.tenHienThi} lưu chấm công ngày ${ngay} (Đội: ${targetDoiId}). ${soGa.toLocaleString('vi-VN')} con, đơn giá ${donGia.toLocaleString('vi-VN')}đ, ${presentEmployeeIds.length} người có mặt. Quỹ lương: ${result.tongLuongNgay.toLocaleString('vi-VN')}đ`,
       existing ? { soGa: existing.soGaBatDuoc, tongLuong: existing.tongLuongNgay } : null,
-      { soGa, donGia, tongLuong: result.tongLuongNgay, coMatCount: presentEmployeeIds.length }
+      { soGa, donGia, tongLuong: result.tongLuongNgay, coMatCount: presentEmployeeIds.length, doiId: targetDoiId }
     );
 
     return {
@@ -494,7 +853,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    setAttendanceRecords(prev => prev.filter(r => r.id !== id));
+    setAttendanceRecords(prev => {
+      const updated = prev.filter(r => r.id !== id);
+      PayrollDatabase.saveAttendanceRecords(updated);
+      return updated;
+    });
     createAuditLog(
       'BangChamCongNgay',
       id,
@@ -507,11 +870,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const resetToSampleData = () => {
     if (window.confirm('Khôi phục toàn bộ dữ liệu mẫu ban đầu từ file Excel COGAVA? Thao tác này sẽ đặt lại các sửa đổi.')) {
-      setEmployees(INITIAL_EMPLOYEES);
-      setConfigs(INITIAL_CONFIGS);
-      setAttendanceRecords(INITIAL_ATTENDANCE_RECORDS);
-      setAuditLogs(INITIAL_AUDIT_LOGS);
-      setCurrentUser(AVAILABLE_USERS[0]);
       localStorage.clear();
       window.location.reload();
     }
@@ -520,15 +878,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const value: AppContextType = {
     companyInfo: THONG_TIN_CONG_TY,
     employees,
+    teams,
     configs,
     attendanceRecords,
     auditLogs,
+    userAccounts,
     currentUser,
     setCurrentUser,
-    availableUsers: AVAILABLE_USERS,
+    availableUsers,
     isAuthenticated,
     login,
+    loginWithCredentials,
     logout,
+    addTeam,
+    updateTeam,
+    deleteTeam,
+    assignEmployeeToTeam,
+    updateCurrentUserAvatar,
+    updateCurrentUserProfile,
+    changeUserPassword,
+    adminResetUserPassword,
+    addUserAccount,
+    deleteUserAccount,
+    clearAttendanceToBlank,
+    loadSampleExcelAttendance,
     deviceMode,
     setDeviceMode,
     isMobileView,

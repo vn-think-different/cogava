@@ -1,12 +1,14 @@
 import {
   BangChamCongNgay,
   CauHinhLuong,
+  DoiNhanVien,
   NhanVien,
   NhatKyThayDoi,
   ThongTinDoanhNghiep,
 } from '../types';
 import { calculateDailyPayroll } from '../utils/payrollEngine';
 import { getDayOfWeekVN } from '../utils/formatters';
+import { createSampleCccdFront, createSampleCccdBack } from '../utils/cccdHelper';
 
 export const THONG_TIN_CONG_TY: ThongTinDoanhNghiep = {
   tenCongTy: 'CÔNG TY TNHH COGAVA',
@@ -19,55 +21,108 @@ export const THONG_TIN_CONG_TY: ThongTinDoanhNghiep = {
   mauChuDao: '#FF8000',
 };
 
+export const DEFAULT_TEAMS: DoiNhanVien[] = [
+  {
+    id: 'doi-1',
+    tenDoi: 'Đội 1 - Dĩ An (Đội chính)',
+    doiTruongUserId: 'usr-captain',
+    doiTruongTen: 'Lê Đội Trưởng',
+    ghiChu: 'Đội bắt gà chính khu vực Dĩ An, Thuận An',
+    ngayTao: '2026-01-01 08:00:00',
+  },
+  {
+    id: 'doi-2',
+    tenDoi: 'Đội 2 - Bến Cát (Đội 2)',
+    doiTruongUserId: 'usr-captain-2',
+    doiTruongTen: 'Trần Đội Trưởng',
+    ghiChu: 'Đội bắt gà khu vực Bến Cát, Tân Uyên',
+    ngayTao: '2026-02-01 08:00:00',
+  },
+];
+
 export const INITIAL_EMPLOYEES: NhanVien[] = [
   {
     id: 'emp-kien',
     hoTen: 'Kiên',
     vaiTro: 'CHINH',
+    doiId: 'doi-1',
     ngayVaoLam: '2026-01-01',
     sdt: '0912.345.678',
     stkNganHang: '1903688888999',
     tenNganHang: 'Techcombank (CN Bình Dương)',
+    soCccd: '079095012345',
+    cccdNgayCap: '2022-01-10',
+    cccdNoiCap: 'Cục Cảnh sát QLHC về TTXH',
+    cccdMatTruoc: createSampleCccdFront('Nguyễn Văn Kiên', '079095012345'),
+    cccdMatSau: createSampleCccdBack('Nguyễn Văn Kiên', '079095012345'),
     trangThai: 'DANG_LAM',
   },
   {
     id: 'emp-sang',
     hoTen: 'Sáng',
     vaiTro: 'CHINH',
+    doiId: 'doi-1',
     ngayVaoLam: '2026-01-01',
     sdt: '0923.456.789',
     stkNganHang: '0421000123456',
     tenNganHang: 'Vietcombank (CN Dĩ An)',
+    soCccd: '079096054321',
+    cccdNgayCap: '2022-03-15',
+    cccdNoiCap: 'Cục Cảnh sát QLHC về TTXH',
+    cccdMatTruoc: createSampleCccdFront('Trần Văn Sáng', '079096054321'),
+    cccdMatSau: createSampleCccdBack('Trần Văn Sáng', '079096054321'),
     trangThai: 'DANG_LAM',
   },
   {
     id: 'emp-vu',
     hoTen: 'Vũ',
     vaiTro: 'CHINH',
+    doiId: 'doi-1',
     ngayVaoLam: '2026-01-01',
     sdt: '0934.567.890',
     stkNganHang: '1028749281',
     tenNganHang: 'MB Bank',
+    soCccd: '079094033221',
+    cccdNgayCap: '2022-06-20',
+    cccdNoiCap: 'Cục Cảnh sát QLHC về TTXH',
     trangThai: 'DANG_LAM',
   },
   {
     id: 'emp-dat',
     hoTen: 'Đạt',
     vaiTro: 'PHU',
+    doiId: 'doi-1',
     ngayVaoLam: '2026-02-15',
     sdt: '0945.678.901',
     stkNganHang: '9028471928',
     tenNganHang: 'BIDV (CN Đông Bình Dương)',
+    soCccd: '079098088999',
+    cccdNgayCap: '2023-01-12',
+    cccdNoiCap: 'Cục Cảnh sát QLHC về TTXH',
     trangThai: 'DANG_LAM',
   },
   {
     id: 'emp-toi',
     hoTen: 'Tỏi',
     vaiTro: 'PHU',
+    doiId: 'doi-2',
     ngayVaoLam: '2026-03-01',
     sdt: '0956.789.012',
     stkNganHang: '0382947192',
     tenNganHang: 'ACB',
+    soCccd: '079097066554',
+    trangThai: 'DANG_LAM',
+  },
+  {
+    id: 'emp-an',
+    hoTen: 'An',
+    vaiTro: 'CHINH',
+    doiId: 'doi-2',
+    ngayVaoLam: '2026-03-05',
+    sdt: '0967.890.123',
+    stkNganHang: '1092837465',
+    tenNganHang: 'VPBank',
+    soCccd: '079099011223',
     trangThai: 'DANG_LAM',
   },
 ];
@@ -109,6 +164,7 @@ function createDayRecord(
   return {
     id: `att-${ngay}`,
     ngay,
+    doiId: 'doi-1',
     thuTrongTuan: getDayOfWeekVN(ngay),
     soGaBatDuoc: soGa,
     donGiaApDung: donGia,

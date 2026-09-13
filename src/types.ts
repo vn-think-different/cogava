@@ -25,15 +25,30 @@ export interface ThongTinDoanhNghiep {
   mauChuDao: string;
 }
 
+export interface DoiNhanVien {
+  id: string; // e.g. 'doi-1', 'doi-2'
+  tenDoi: string; // e.g. 'Đội 1 - Dĩ An'
+  doiTruongUserId?: string; // id UserAccount của đội trưởng
+  doiTruongTen?: string; // Tên hiển thị của đội trưởng
+  ghiChu?: string;
+  ngayTao?: string;
+}
+
 export interface NhanVien {
   id: string;
   hoTen: string;
   vaiTro: VaiTroNhanVien;
+  doiId?: string; // Liên kết tới DoiNhanVien.id
   ngayVaoLam: string; // YYYY-MM-DD
   ngayNghiViec?: string | null;
   sdt?: string;
   stkNganHang?: string;
   tenNganHang?: string;
+  soCccd?: string; // Số Căn cước công dân (12 số - không bắt buộc)
+  cccdNgayCap?: string; // Ngày cấp CCCD (tuỳ chọn)
+  cccdNoiCap?: string; // Nơi cấp (tuỳ chọn)
+  cccdMatTruoc?: string; // Data URL ảnh mặt trước CCCD
+  cccdMatSau?: string; // Data URL ảnh mặt sau CCCD
   trangThai: TrangThaiNhanVien;
 }
 
@@ -59,7 +74,8 @@ export interface ChiTietChamCong {
 
 export interface BangChamCongNgay {
   id: string;
-  ngay: string; // YYYY-MM-DD (unique)
+  ngay: string; // YYYY-MM-DD
+  doiId?: string; // Mã đội phụ trách (e.g. 'doi-1', 'doi-2')
   thuTrongTuan: string; // Thứ Hai, Thứ Ba...
   soGaBatDuoc: number;
   donGiaApDung: number; // Snapshot
@@ -85,11 +101,38 @@ export interface NhatKyThayDoi {
   giaTriMoi?: Record<string, unknown> | null;
 }
 
+export interface UserAccount {
+  id: string;
+  username: string; // Tên đăng nhập (e.g. 'admin', 'doitruong', 'kien'...)
+  password: string; // Mật khẩu tài khoản
+  tenHienThi: string;
+  vaiTro: VaiTroNguoiDung;
+  nhanVienId?: string; // Liên kết hồ sơ nhân viên nếu là NHAN_VIEN
+  doiId?: string; // Đội phụ trách (nếu là DOI_TRUONG hoặc NHAN_VIEN)
+  avatar?: string; // Mã preset avatar hoặc Data URL ảnh
+  sdt?: string;
+  email?: string;
+  soCccd?: string; // Số CCCD (không bắt buộc)
+  cccdNgayCap?: string; // Ngày cấp CCCD
+  cccdNoiCap?: string; // Nơi cấp
+  cccdMatTruoc?: string; // Ảnh mặt trước CCCD
+  cccdMatSau?: string; // Ảnh mặt sau CCCD
+  ngayTao?: string;
+}
+
 export interface UserSession {
   id: string;
+  username?: string;
   tenHienThi: string;
   vaiTro: VaiTroNguoiDung;
   nhanVienId?: string;
+  doiId?: string; // Đội được phân công
+  avatar?: string;
+  soCccd?: string;
+  cccdNgayCap?: string;
+  cccdNoiCap?: string;
+  cccdMatTruoc?: string;
+  cccdMatSau?: string;
 }
 
 export interface PayrollCalculationInput {

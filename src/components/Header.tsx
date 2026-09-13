@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Logo } from './Logo';
 import { useApp } from '../context/AppContext';
+import { UserAvatar } from './UserAvatar';
+import { AccountSettingsModal } from './AccountSettingsModal';
 import {
   BarChart3,
   CalendarCheck2,
@@ -24,6 +26,8 @@ import {
   ChevronDown,
   Check,
   Settings,
+  KeyRound,
+  Database,
 } from 'lucide-react';
 
 export type NavTab =
@@ -49,8 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
   const changeTab = onSelectTab || setActiveTabProp || (() => {});
   const {
     currentUser,
-    setCurrentUser,
-    availableUsers,
+    teams,
     resetToSampleData,
     companyInfo,
     logout,
@@ -59,10 +62,21 @@ export const Header: React.FC<HeaderProps> = ({
     isMobileView,
   } = useApp();
 
+  const userTeam = teams.find(t => t.id === currentUser.doiId);
+
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showCompanyInfo, setShowCompanyInfo] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [accountModalOpen, setAccountModalOpen] = useState(false);
+  const [accountModalTab, setAccountModalTab] = useState<'profile' | 'password' | 'accounts' | 'database'>('profile');
   const userDropdownRef = useRef<HTMLDivElement>(null);
+
+  const openAccountModal = (tab: 'profile' | 'password' | 'accounts' | 'database') => {
+    setAccountModalTab(tab);
+    setAccountModalOpen(true);
+    setUserDropdownOpen(false);
+    setMobileMenuOpen(false);
+  };
 
   // Close dropdown on click outside or escape key
   useEffect(() => {
@@ -147,28 +161,32 @@ export const Header: React.FC<HeaderProps> = ({
         );
       case 'DOI_TRUONG':
         return (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-800 bg-sky-100 px-1.5 py-0.5 rounded border border-sky-200 whitespace-nowrap">
-            <UserCheck className="w-3 h-3 text-sky-600" />
-            Đội trưởng
-          </span>
+          <div className="inline-flex items-center gap-1 flex-wrap">
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-800 bg-sky-100 px-1.5 py-0.5 rounded border border-sky-200 whitespace-nowrap">
+              <UserCheck className="w-3 h-3 text-sky-600" />
+              Đội trưởng
+            </span>
+            {userTeam && (
+              <span className="inline-flex items-center text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200 whitespace-nowrap">
+                {userTeam.tenDoi}
+              </span>
+            )}
+          </div>
         );
       case 'NHAN_VIEN':
         return (
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 whitespace-nowrap">
-            <User className="w-3 h-3 text-emerald-600" />
-            Nhân viên
-          </span>
+          <div className="inline-flex items-center gap-1 flex-wrap">
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 whitespace-nowrap">
+              <User className="w-3 h-3 text-emerald-600" />
+              Nhân viên
+            </span>
+            {userTeam && (
+              <span className="inline-flex items-center text-[10px] font-bold text-stone-700 bg-stone-100 px-1.5 py-0.5 rounded border border-stone-200 whitespace-nowrap">
+                {userTeam.tenDoi}
+              </span>
+            )}
+          </div>
         );
-    }
-  };
-
-  const handleSwitchUser = (targetUser: typeof availableUsers[0]) => {
-    setCurrentUser(targetUser);
-    setUserDropdownOpen(false);
-    if (targetUser.vaiTro === 'NHAN_VIEN') {
-      changeTab('portal');
-    } else {
-      changeTab('dashboard');
     }
   };
 
@@ -333,9 +351,12 @@ export const Header: React.FC<HeaderProps> = ({
                   aria-expanded={userDropdownOpen}
                 >
                   {/* Avatar */}
-                  <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-orange-600 to-amber-500 text-white font-black text-xs flex items-center justify-center shadow-xs flex-shrink-0">
-                    {currentUser.tenHienThi.charAt(0)}
-                  </div>
+                  <UserAvatar
+                    avatar={currentUser.avatar}
+                    name={currentUser.tenHienThi}
+                    role={currentUser.vaiTro}
+                    size="sm"
+                  />
 
                   {/* Name & Role */}
                   <div className="hidden sm:flex flex-col text-left">
@@ -364,13 +385,16 @@ export const Header: React.FC<HeaderProps> = ({
 
                 {/* Dropdown Menu Panel */}
                 {userDropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-76 sm:w-84 bg-white rounded-2xl shadow-2xl border border-stone-200 py-1.5 z-50 animate-fadeIn divide-y divide-stone-100">
+                  <div className="absolute right-0 mt-2 w-76 sm:w-84 bg-white rounded-2xl shadow-2xl border border-stone-200 py-1.5 z-50 animate-fadeIn divide-y divide-stone-100 max-h-[85vh] overflow-y-auto">
                     {/* User Profile Header Card */}
                     <div className="p-3.5 bg-gradient-to-br from-stone-50 to-orange-50/40 rounded-t-2xl">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-orange-500 text-white font-black text-base flex items-center justify-center shadow-xs">
-                          {currentUser.tenHienThi.charAt(0)}
-                        </div>
+                        <UserAvatar
+                          avatar={currentUser.avatar}
+                          name={currentUser.tenHienThi}
+                          role={currentUser.vaiTro}
+                          size="lg"
+                        />
                         <div className="overflow-hidden flex-1">
                           <div className="flex items-center gap-1.5">
                             <h4 className="font-extrabold text-sm text-stone-900 truncate">
@@ -379,25 +403,110 @@ export const Header: React.FC<HeaderProps> = ({
                             {getRoleBadge()}
                           </div>
                           <p className="text-[11px] text-stone-500 truncate mt-0.5">
-                            {currentUser.vaiTro === 'ADMIN'
-                              ? 'thach.admin@cogava.vn • Toàn quyền'
-                              : currentUser.vaiTro === 'DOI_TRUONG'
-                              ? 'doitruong@cogava.vn • Hiện trường'
-                              : 'nhanvien@cogava.vn • Nhân viên'}
+                            @{currentUser.username || 'admin'} • {currentUser.vaiTro === 'ADMIN' ? 'Toàn quyền CSDL' : currentUser.vaiTro === 'DOI_TRUONG' ? 'Chấm công' : 'Xem lương cá nhân'}
                           </p>
                         </div>
                       </div>
                     </div>
 
-                    {/* Admin Management Section (Exclusive for ADMIN role) */}
+                    {/* Account Settings & Security Options */}
+                    <div className="p-2 space-y-1">
+                      <div className="px-2 py-1 flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold text-stone-400 uppercase tracking-wider">
+                          Tài khoản & Bảo mật
+                        </span>
+                        <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100">
+                          {currentUser.tenHienThi}
+                        </span>
+                      </div>
+
+                      {/* Đổi Avatar & Hồ sơ */}
+                      <button
+                        type="button"
+                        onClick={() => openAccountModal('profile')}
+                        className="w-full text-left p-2.5 rounded-xl flex items-center gap-2.5 text-xs text-stone-700 hover:bg-stone-50 transition-colors cursor-pointer"
+                      >
+                        <div className="p-2 rounded-lg bg-orange-100 text-orange-700">
+                          <User className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="font-bold block text-stone-800">
+                            Hồ sơ & Đổi Avatar
+                          </span>
+                          <span className="text-[10px] text-stone-500 font-normal">
+                            Chọn avatar đẹp hoặc tải ảnh cá nhân
+                          </span>
+                        </div>
+                      </button>
+
+                      {/* Đổi mật khẩu */}
+                      <button
+                        type="button"
+                        onClick={() => openAccountModal('password')}
+                        className="w-full text-left p-2.5 rounded-xl flex items-center gap-2.5 text-xs text-stone-700 hover:bg-stone-50 transition-colors cursor-pointer"
+                      >
+                        <div className="p-2 rounded-lg bg-amber-100 text-amber-700">
+                          <KeyRound className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="font-bold block text-stone-800">
+                            Đổi mật khẩu tài khoản
+                          </span>
+                          <span className="text-[10px] text-stone-500 font-normal">
+                            Bảo mật tài khoản cá nhân
+                          </span>
+                        </div>
+                      </button>
+
+                      {/* Admin: Quản lý tài khoản & phân quyền */}
+                      {currentUser.vaiTro === 'ADMIN' && (
+                        <button
+                          type="button"
+                          onClick={() => openAccountModal('accounts')}
+                          className="w-full text-left p-2.5 rounded-xl flex items-center gap-2.5 text-xs text-stone-700 hover:bg-stone-50 transition-colors cursor-pointer"
+                        >
+                          <div className="p-2 rounded-lg bg-indigo-100 text-indigo-700">
+                            <ShieldCheck className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="font-bold block text-stone-800">
+                              Quản lý tài khoản & phân quyền
+                            </span>
+                            <span className="text-[10px] text-stone-500 font-normal">
+                              Cấp tài khoản & đặt lại mật khẩu nhân viên
+                            </span>
+                          </div>
+                        </button>
+                      )}
+
+                      {/* Quản trị CSDL Bảng lương & Kiểm thử (Chỉ dành cho Quản trị viên) */}
+                      {currentUser.vaiTro === 'ADMIN' && (
+                        <button
+                          type="button"
+                          onClick={() => openAccountModal('database')}
+                          className="w-full text-left p-2.5 rounded-xl flex items-center gap-2.5 text-xs text-stone-700 hover:bg-stone-50 transition-colors cursor-pointer"
+                        >
+                          <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700">
+                            <Database className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <span className="font-bold block text-stone-800">
+                              CSDL Bảng lương & Kiểm thử
+                            </span>
+                            <span className="text-[10px] text-stone-500 font-normal">
+                              Xóa trắng CSDL để test độ chính xác
+                            </span>
+                          </div>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Admin Configuration Shortcuts (Only for ADMIN role) */}
                     {currentUser.vaiTro === 'ADMIN' && (
                       <div className="p-2 space-y-1">
                         <div className="px-2 py-1 flex items-center justify-between">
                           <span className="text-[10px] font-extrabold text-stone-400 uppercase tracking-wider">
                             Quyền Quản trị viên
-                          </span>
-                          <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100">
-                            Thạch (Admin)
                           </span>
                         </div>
 
@@ -474,77 +583,8 @@ export const Header: React.FC<HeaderProps> = ({
                             </span>
                           )}
                         </button>
-
-                        {/* Đặt lại dữ liệu gốc từ Excel */}
-                        <button
-                          id="btn-admin-reset"
-                          onClick={handleResetData}
-                          className="w-full text-left p-2.5 rounded-xl flex items-center gap-2.5 text-xs text-stone-700 hover:bg-stone-50 transition-colors cursor-pointer"
-                        >
-                          <div className="p-2 rounded-lg bg-stone-100 text-stone-600">
-                            <RotateCcw className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <span className="font-bold block text-stone-800">
-                              Đặt lại dữ liệu gốc Excel
-                            </span>
-                            <span className="text-[10px] text-stone-500 font-normal">
-                              Khôi phục 5 nhân viên & bảng lương chuẩn
-                            </span>
-                          </div>
-                        </button>
                       </div>
                     )}
-
-                    {/* Role Switcher Section */}
-                    <div className="p-2 space-y-1">
-                      <div className="px-2 py-1">
-                        <span className="text-[10px] font-extrabold text-stone-400 uppercase tracking-wider">
-                          Đổi tài khoản (Phân quyền)
-                        </span>
-                      </div>
-                      <div className="space-y-1">
-                        {availableUsers.map(user => {
-                          const isSelected = user.id === currentUser.id;
-                          return (
-                            <button
-                              key={user.id}
-                              onClick={() => handleSwitchUser(user)}
-                              className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-colors cursor-pointer ${
-                                isSelected
-                                  ? 'bg-orange-50 text-orange-950 font-bold border border-orange-200'
-                                  : 'text-stone-700 hover:bg-stone-50'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className={`w-6 h-6 rounded-md flex items-center justify-center font-black text-[11px] ${
-                                    isSelected
-                                      ? 'bg-orange-500 text-white'
-                                      : 'bg-stone-200 text-stone-700'
-                                  }`}
-                                >
-                                  {user.tenHienThi.charAt(0)}
-                                </div>
-                                <div className="text-left">
-                                  <span className="block font-bold leading-tight">{user.tenHienThi}</span>
-                                  <span className="text-[10px] text-stone-500 font-normal">
-                                    {user.vaiTro === 'ADMIN'
-                                      ? 'Quản trị viên'
-                                      : user.vaiTro === 'DOI_TRUONG'
-                                      ? 'Đội trưởng'
-                                      : 'Nhân viên'}
-                                  </span>
-                                </div>
-                              </div>
-                              {isSelected && (
-                                <Check className="w-4 h-4 text-orange-600 flex-shrink-0" />
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
 
                     {/* Logout Button */}
                     <div className="p-2">
@@ -583,32 +623,35 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="border-t border-stone-200 bg-white px-4 pt-3 pb-4 space-y-3 shadow-lg animate-fadeIn">
             {/* User Profile in Mobile Drawer */}
             <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200 flex items-center justify-between">
-              <div>
-                <span className="text-xs text-stone-500 block">Đang đăng nhập:</span>
-                <span className="text-sm font-extrabold text-stone-900">
-                  {currentUser.tenHienThi}
-                </span>
-                <div className="mt-1">{getRoleBadge()}</div>
+              <div className="flex items-center gap-2.5">
+                <UserAvatar
+                  avatar={currentUser.avatar}
+                  name={currentUser.tenHienThi}
+                  role={currentUser.vaiTro}
+                  size="md"
+                />
+                <div>
+                  <span className="text-xs text-stone-500 block leading-tight">Đang đăng nhập:</span>
+                  <span className="text-sm font-extrabold text-stone-900 block leading-tight">
+                    {currentUser.tenHienThi}
+                  </span>
+                  <div className="mt-1">{getRoleBadge()}</div>
+                </div>
               </div>
-
-              <select
-                aria-label="Đổi vai trò nhanh"
-                value={currentUser.id}
-                onChange={e => {
-                  const target = availableUsers.find(u => u.id === e.target.value);
-                  if (target) {
-                    handleSwitchUser(target);
-                    setMobileMenuOpen(false);
-                  }
-                }}
-                className="text-xs font-bold bg-white text-stone-800 border border-stone-300 rounded-lg px-2.5 py-1.5"
-              >
-                {availableUsers.map(user => (
-                  <option key={user.id} value={user.id}>
-                    {user.tenHienThi} ({user.vaiTro === 'ADMIN' ? 'Admin' : user.vaiTro === 'DOI_TRUONG' ? 'Đội trưởng' : 'NV'})
-                  </option>
-                ))}
-              </select>
+              <div className="flex flex-col gap-1 items-end">
+                <button
+                  onClick={() => openAccountModal('profile')}
+                  className="px-2 py-1 text-[11px] font-bold text-stone-700 bg-white border border-stone-200 rounded-lg hover:bg-stone-100"
+                >
+                  Hồ sơ
+                </button>
+                <button
+                  onClick={() => openAccountModal('password')}
+                  className="px-2 py-1 text-[11px] font-bold text-stone-700 bg-white border border-stone-200 rounded-lg hover:bg-stone-100"
+                >
+                  Đổi MK
+                </button>
+              </div>
             </div>
 
             {/* Menu items */}
@@ -800,6 +843,13 @@ export const Header: React.FC<HeaderProps> = ({
           })}
         </nav>
       )}
+
+      {/* Account Settings & Database Management Modal */}
+      <AccountSettingsModal
+        isOpen={accountModalOpen}
+        onClose={() => setAccountModalOpen(false)}
+        initialTab={accountModalTab}
+      />
     </>
   );
 };
