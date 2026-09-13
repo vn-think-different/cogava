@@ -1,0 +1,6 @@
+{
+  "name": "COGAVA - Quản Lý Chấm Công & Tính Lương",
+  "description": "Hệ thống quản lý chấm công, sản lượng bắt gà và tự động tính lương theo ngày cho đội bắt gà CÔNG TY TNHH COGAVA với cơ chế chốt sổ an toàn và báo cáo chi tiết.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
