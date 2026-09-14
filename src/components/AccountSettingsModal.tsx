@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { UserAvatar, AVATAR_PRESETS } from './UserAvatar';
 import { VaiTroNguoiDung, UserAccount } from '../types';
+import { ConfirmModal } from './ConfirmModal';
 import {
   X,
   User,
@@ -72,6 +73,12 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [showCurrentPass, setShowCurrentPass] = useState<boolean>(false);
   const [showNewPass, setShowNewPass] = useState<boolean>(false);
+
+  // Modals for confirmation
+  const [deletingAccount, setDeletingAccount] = useState<UserAccount | null>(null);
+  const [resettingAccount, setResettingAccount] = useState<UserAccount | null>(null);
+  const [showClearBlankConfirm, setShowClearBlankConfirm] = useState(false);
+  const [showLoadSampleConfirm, setShowLoadSampleConfirm] = useState(false);
 
   // Add Account Modal (Admin)
   const [showAddAccountModal, setShowAddAccountModal] = useState<boolean>(false);
@@ -164,15 +171,30 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
   };
 
   // Handle Admin Reset Password
-  const handleAdminReset = (userId: string, name: string) => {
-    if (window.confirm(`Đặt lại mật khẩu cho tài khoản "${name}" về mật khẩu mặc định: 123456?`)) {
-      const res = adminResetUserPassword(userId, '123456');
-      setStatusMsg({
-        type: res.success ? 'success' : 'error',
-        message: res.message,
-      });
-      setTimeout(() => setStatusMsg({ type: null, message: '' }), 3500);
-    }
+  const handleAdminReset = (account: UserAccount) => {
+    setResettingAccount(account);
+  };
+
+  const handleConfirmResetPassword = () => {
+    if (!resettingAccount) return;
+    const res = adminResetUserPassword(resettingAccount.id, '123456');
+    setStatusMsg({
+      type: res.success ? 'success' : 'error',
+      message: res.message,
+    });
+    setResettingAccount(null);
+    setTimeout(() => setStatusMsg({ type: null, message: '' }), 3500);
+  };
+
+  const handleConfirmDeleteAccount = () => {
+    if (!deletingAccount) return;
+    const res = deleteUserAccount(deletingAccount.id);
+    setStatusMsg({
+      type: res.success ? 'success' : 'error',
+      message: res.message,
+    });
+    setDeletingAccount(null);
+    setTimeout(() => setStatusMsg({ type: null, message: '' }), 3500);
   };
 
   // Handle Admin Create Account
@@ -212,31 +234,29 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
   // Handle Clear Database to Blank
   const handleClearToBlank = () => {
-    if (
-      window.confirm(
-        'BẠN CHẮC CHẮN MUỐN XÓA SẠCH DỮ LIỆU CHẤM CÔNG?\n\nToàn bộ các ngày chấm công sẽ bị xóa về 0 bản ghi (CSDL Trắng hoàn toàn) để bạn tiến hành kiểm thử nhập liệu và tính toán độ chính xác từ ngày đầu tiên.'
-      )
-    ) {
-      const res = clearAttendanceToBlank();
-      setStatusMsg({ type: 'success', message: res.message });
-      setTimeout(() => setStatusMsg({ type: null, message: '' }), 4000);
-    }
+    setShowClearBlankConfirm(true);
+  };
+
+  const handleConfirmClearBlank = () => {
+    const res = clearAttendanceToBlank();
+    setStatusMsg({ type: 'success', message: res.message });
+    setShowClearBlankConfirm(false);
+    setTimeout(() => setStatusMsg({ type: null, message: '' }), 4000);
   };
 
   // Handle Load Sample Records
   const handleLoadSample = () => {
-    if (
-      window.confirm(
-        'Nạp lại 28 bản ghi chấm công mẫu từ file Excel Bang_luong_COGAVA (Tháng 8 và đầu Tháng 9/2026) để đối chiếu công thức?'
-      )
-    ) {
-      loadSampleExcelAttendance();
-      setStatusMsg({
-        type: 'success',
-        message: 'Đã nạp thành công 28 bản ghi mẫu từ Excel để đối chiếu!',
-      });
-      setTimeout(() => setStatusMsg({ type: null, message: '' }), 4000);
-    }
+    setShowLoadSampleConfirm(true);
+  };
+
+  const handleConfirmLoadSample = () => {
+    loadSampleExcelAttendance();
+    setStatusMsg({
+      type: 'success',
+      message: 'Đã nạp thành công 28 bản ghi mẫu từ Excel để đối chiếu!',
+    });
+    setShowLoadSampleConfirm(false);
+    setTimeout(() => setStatusMsg({ type: null, message: '' }), 4000);
   };
 
   return (
@@ -639,20 +659,16 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   type="button"
-                                  onClick={() => handleAdminReset(account.id, account.tenHienThi)}
+                                  onClick={() => handleAdminReset(account)}
                                   className="px-2 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg text-[11px] font-semibold border border-stone-200 cursor-pointer"
                                   title="Đặt lại mật khẩu về 123456"
                                 >
                                   Đặt lại MK
                                 </button>
-                                {account.id !== 'usr-admin' && (
+                                {account.id !== currentUser.id && account.username !== 'admin' && account.username !== 'thach' && (
                                   <button
                                     type="button"
-                                    onClick={() => {
-                                      if (window.confirm(`Xóa tài khoản @${account.username}?`)) {
-                                        deleteUserAccount(account.id);
-                                      }
-                                    }}
+                                    onClick={() => setDeletingAccount(account)}
                                     className="p-1 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
                                     title="Xóa tài khoản"
                                   >
@@ -868,6 +884,56 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Confirmation Modals inside AccountSettings */}
+      <ConfirmModal
+        isOpen={!!deletingAccount}
+        title="Xác nhận xóa tài khoản người dùng"
+        message="Bạn có chắc muốn xóa tài khoản đăng nhập này? Người dùng này sẽ không thể đăng nhập vào hệ thống được nữa."
+        itemName={deletingAccount ? `@${deletingAccount.username} (${deletingAccount.tenHienThi})` : ''}
+        itemDetail={deletingAccount ? `Vai trò: ${deletingAccount.vaiTro}` : ''}
+        confirmText="Xác nhận xóa tài khoản"
+        cancelText="Hủy"
+        type="danger"
+        onConfirm={handleConfirmDeleteAccount}
+        onCancel={() => setDeletingAccount(null)}
+      />
+
+      <ConfirmModal
+        isOpen={!!resettingAccount}
+        title="Đặt lại mật khẩu mặc định"
+        message="Mật khẩu của tài khoản sẽ được đưa về mật khẩu ban đầu là: 123456"
+        itemName={resettingAccount ? `@${resettingAccount.username} (${resettingAccount.tenHienThi})` : ''}
+        confirmText="Đặt lại mật khẩu"
+        cancelText="Hủy"
+        type="warning"
+        onConfirm={handleConfirmResetPassword}
+        onCancel={() => setResettingAccount(null)}
+      />
+
+      <ConfirmModal
+        isOpen={showClearBlankConfirm}
+        title="CẢNH BÁO: Xóa sạch dữ liệu chấm công"
+        message="Toàn bộ các ngày chấm công trong CSDL sẽ được xóa về 0 bản ghi (CSDL Trắng hoàn toàn) để bạn tiến hành kiểm thử nhập liệu thực tế từ đầu."
+        itemName={`Xóa ${attendanceRecords.length} ngày chấm công`}
+        confirmText="Xác nhận xóa sạch"
+        cancelText="Hủy"
+        type="danger"
+        onConfirm={handleConfirmClearBlank}
+        onCancel={() => setShowClearBlankConfirm(false)}
+      />
+
+      <ConfirmModal
+        isOpen={showLoadSampleConfirm}
+        title="Nạp dữ liệu chấm công mẫu từ Excel"
+        message="Hệ thống sẽ nạp lại 28 bản ghi chấm công thực tế từ file Excel mẫu COGAVA để bạn đối chiếu kiểm tra công thức."
+        itemName="28 ngày chấm công mẫu (Tháng 8 & Tháng 9/2026)"
+        confirmText="Nạp dữ liệu mẫu"
+        cancelText="Hủy"
+        type="info"
+        onConfirm={handleConfirmLoadSample}
+        onCancel={() => setShowLoadSampleConfirm(false)}
+      />
     </div>
   );
 };

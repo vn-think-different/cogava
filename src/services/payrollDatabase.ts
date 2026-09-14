@@ -15,154 +15,28 @@ import {
 } from '../data/initialData';
 import { createSampleCccdFront, createSampleCccdBack } from '../utils/cccdHelper';
 
-// Prefix storage key
-const DB_PREFIX = 'cogava_payroll_db_v2_';
+// Prefix storage key v3
+const DB_PREFIX = 'cogava_payroll_db_v3_';
 
-// 1. Initial User Accounts
+// 1. Initial User Accounts (Chỉ 2 tài khoản quản trị mặc định ban đầu theo yêu cầu)
 export const DEFAULT_USER_ACCOUNTS: UserAccount[] = [
   {
-    id: 'usr-admin',
-    username: 'admin',
+    id: 'usr-thach',
+    username: 'thach',
     password: '123456',
     tenHienThi: 'Thạch',
     vaiTro: 'ADMIN',
     avatar: 'preset-admin',
-    sdt: '0822.705.705',
-    email: 'thach.admin@cogava.vn',
-    soCccd: '079088001122',
-    cccdNgayCap: '2021-05-18',
-    cccdNoiCap: 'Cục Cảnh sát QLHC về TTXH',
-    cccdMatTruoc: createSampleCccdFront('Thạch Quản Trị', '079088001122'),
-    cccdMatSau: createSampleCccdBack('Thạch Quản Trị', '079088001122'),
     ngayTao: '2026-01-01 08:00:00',
   },
   {
-    id: 'usr-captain',
-    username: 'doitruong',
-    password: '123456',
-    tenHienThi: 'Lê Đội Trưởng',
-    vaiTro: 'DOI_TRUONG',
-    doiId: 'doi-1',
-    avatar: 'preset-captain',
-    sdt: '0374.523.959',
-    email: 'doitruong@cogava.vn',
-    soCccd: '079090003344',
-    cccdNgayCap: '2021-08-20',
-    cccdNoiCap: 'Cục Cảnh sát QLHC về TTXH',
-    cccdMatTruoc: createSampleCccdFront('Lê Đội Trưởng', '079090003344'),
-    cccdMatSau: createSampleCccdBack('Lê Đội Trưởng', '079090003344'),
+    id: 'usr-admin',
+    username: 'admin',
+    password: 'Langbat136@',
+    tenHienThi: 'Admin',
+    vaiTro: 'ADMIN',
+    avatar: 'preset-admin',
     ngayTao: '2026-01-01 08:00:00',
-  },
-  {
-    id: 'usr-captain-2',
-    username: 'doitruong2',
-    password: '123456',
-    tenHienThi: 'Trần Đội Trưởng',
-    vaiTro: 'DOI_TRUONG',
-    doiId: 'doi-2',
-    avatar: 'preset-captain',
-    sdt: '0385.123.456',
-    email: 'doitruong2@cogava.vn',
-    soCccd: '079091004455',
-    cccdNgayCap: '2022-02-14',
-    cccdNoiCap: 'Cục Cảnh sát QLHC về TTXH',
-    ngayTao: '2026-02-01 08:00:00',
-  },
-  {
-    id: 'usr-emp-kien',
-    username: 'kien',
-    password: '123456',
-    tenHienThi: 'Kiên',
-    vaiTro: 'NHAN_VIEN',
-    nhanVienId: 'emp-kien',
-    doiId: 'doi-1',
-    avatar: 'preset-worker-kien',
-    sdt: '0912.345.678',
-    email: 'kien.worker@cogava.vn',
-    soCccd: '079095012345',
-    cccdNgayCap: '2022-01-10',
-    cccdNoiCap: 'Cục Cảnh sát QLHC về TTXH',
-    cccdMatTruoc: createSampleCccdFront('Nguyễn Văn Kiên', '079095012345'),
-    cccdMatSau: createSampleCccdBack('Nguyễn Văn Kiên', '079095012345'),
-    ngayTao: '2026-01-01 08:00:00',
-  },
-  {
-    id: 'usr-emp-sang',
-    username: 'sang',
-    password: '123456',
-    tenHienThi: 'Sáng',
-    vaiTro: 'NHAN_VIEN',
-    nhanVienId: 'emp-sang',
-    doiId: 'doi-1',
-    avatar: 'preset-worker-sang',
-    sdt: '0923.456.789',
-    email: 'sang.worker@cogava.vn',
-    soCccd: '079096054321',
-    cccdNgayCap: '2022-03-15',
-    cccdNoiCap: 'Cục Cảnh sát QLHC về TTXH',
-    cccdMatTruoc: createSampleCccdFront('Trần Văn Sáng', '079096054321'),
-    cccdMatSau: createSampleCccdBack('Trần Văn Sáng', '079096054321'),
-    ngayTao: '2026-01-01 08:00:00',
-  },
-  {
-    id: 'usr-emp-vu',
-    username: 'vu',
-    password: '123456',
-    tenHienThi: 'Vũ',
-    vaiTro: 'NHAN_VIEN',
-    nhanVienId: 'emp-vu',
-    doiId: 'doi-1',
-    avatar: 'preset-worker-vu',
-    sdt: '0934.567.890',
-    email: 'vu.worker@cogava.vn',
-    soCccd: '079094033221',
-    cccdNgayCap: '2022-06-20',
-    cccdNoiCap: 'Cục Cảnh sát QLHC về TTXH',
-    ngayTao: '2026-01-01 08:00:00',
-  },
-  {
-    id: 'usr-emp-dat',
-    username: 'dat',
-    password: '123456',
-    tenHienThi: 'Đạt',
-    vaiTro: 'NHAN_VIEN',
-    nhanVienId: 'emp-dat',
-    doiId: 'doi-1',
-    avatar: 'preset-worker-dat',
-    sdt: '0945.678.901',
-    email: 'dat.worker@cogava.vn',
-    soCccd: '079098088999',
-    cccdNgayCap: '2023-01-12',
-    cccdNoiCap: 'Cục Cảnh sát QLHC về TTXH',
-    ngayTao: '2026-02-15 08:00:00',
-  },
-  {
-    id: 'usr-emp-toi',
-    username: 'toi',
-    password: '123456',
-    tenHienThi: 'Tỏi',
-    vaiTro: 'NHAN_VIEN',
-    nhanVienId: 'emp-toi',
-    doiId: 'doi-2',
-    avatar: 'preset-worker-toi',
-    sdt: '0956.789.012',
-    email: 'toi.worker@cogava.vn',
-    soCccd: '079097066554',
-    ngayTao: '2026-03-01 08:00:00',
-  },
-  {
-    id: 'usr-emp-an',
-    username: 'an',
-    password: '123456',
-    tenHienThi: 'An',
-    vaiTro: 'NHAN_VIEN',
-    nhanVienId: 'emp-an',
-    doiId: 'doi-2',
-    avatar: 'preset-worker-kien',
-    sdt: '0967.890.123',
-    email: 'an.worker@cogava.vn',
-    soCccd: '079099011223',
-    ngayTao: '2026-03-05 08:00:00',
   },
 ];
 
@@ -171,13 +45,13 @@ export const INITIAL_BLANK_AUDIT_LOGS: NhatKyThayDoi[] = [
     id: 'log-db-init-blank',
     bang: 'HeThong',
     banGhiId: 'csdl-trang',
-    nguoiThucHien: 'Hệ thống',
+    nguoiThucHien: 'Thạch',
     vaiTroNguoiThucHien: 'ADMIN',
     thoiGian: new Date().toISOString().replace('T', ' ').substring(0, 19),
     hanhDong: 'TAO',
-    moTa: 'Khởi tạo cấu trúc CSDL bảng lương và làm sạch dữ liệu chấm công (CSDL trắng 0 bản ghi) để kiểm thử độc lập độ chính xác.',
+    moTa: 'Khởi tạo cấu trúc hệ thống quản trị COGAVA với 2 tài khoản quản trị mặc định.',
     giaTriCu: null,
-    giaTriMoi: { trangThai: 'CSDL_TRANG', attendanceCount: 0 },
+    giaTriMoi: { trangThai: 'HOAT_DONG', adminCount: 2 },
   },
 ];
 
@@ -188,10 +62,10 @@ export class PayrollDatabase {
   // 1. Quản lý Đội nhân viên (Teams)
   static getTeams(): DoiNhanVien[] {
     const saved = localStorage.getItem(DB_PREFIX + 'teams');
-    if (saved) {
+    if (saved !== null) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       } catch (e) {
         console.error('Lỗi đọc teams từ DB:', e);
       }
@@ -212,8 +86,8 @@ export class PayrollDatabase {
       id: newId,
       ngayTao: new Date().toISOString().replace('T', ' ').substring(0, 19),
     };
-    teams.push(newTeam);
-    this.saveTeams(teams);
+    const updated = [...teams, newTeam];
+    this.saveTeams(updated);
     return { success: true, team: newTeam, message: `Đã tạo "${newTeam.tenDoi}" thành công!` };
   }
 
@@ -228,61 +102,73 @@ export class PayrollDatabase {
 
   static deleteTeam(id: string): { success: boolean; message: string } {
     const teams = this.getTeams();
-    if (teams.length <= 1) {
-      return { success: false, message: 'Hệ thống cần tối thiểu 1 đội bắt gà đang hoạt động!' };
-    }
     const filtered = teams.filter(t => t.id !== id);
     this.saveTeams(filtered);
     return { success: true, message: 'Đã xóa đội thành công!' };
   }
 
-  // Lấy danh sách tài khoản
+  // Lấy danh sách tài khoản (luôn bảo đảm 2 tài khoản quản trị thach và admin tồn tại và đúng pass)
   static getUserAccounts(): UserAccount[] {
     const saved = localStorage.getItem(DB_PREFIX + 'users');
+    let accounts: UserAccount[] = [];
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Check & enrich missing accounts or fields
-          let modified = false;
-          const accounts: UserAccount[] = parsed.map((acc: UserAccount) => {
-            if (!acc.doiId) {
-              if (acc.username === 'doitruong') {
-                modified = true;
-                return { ...acc, doiId: 'doi-1' };
-              }
-              if (acc.username === 'toi' || acc.username === 'an') {
-                modified = true;
-                return { ...acc, doiId: 'doi-2' };
-              }
-              if (acc.vaiTro === 'NHAN_VIEN') {
-                modified = true;
-                return { ...acc, doiId: 'doi-1' };
-              }
-            }
-            return acc;
-          });
-
-          // Ensure doitruong2 exists
-          if (!accounts.some(a => a.username === 'doitruong2')) {
-            const dt2 = DEFAULT_USER_ACCOUNTS.find(a => a.username === 'doitruong2');
-            if (dt2) {
-              accounts.push(dt2);
-              modified = true;
-            }
-          }
-
-          if (modified) {
-            this.saveUserAccounts(accounts);
-          }
-          return accounts;
+        if (Array.isArray(parsed)) {
+          accounts = parsed;
         }
       } catch (e) {
         console.error('Lỗi đọc user accounts từ DB:', e);
       }
     }
-    this.saveUserAccounts(DEFAULT_USER_ACCOUNTS);
-    return DEFAULT_USER_ACCOUNTS;
+
+    let modified = false;
+    // Đảm bảo tài khoản 'thach' (pass: 123456)
+    const thachIndex = accounts.findIndex(a => a.username.toLowerCase() === 'thach');
+    if (thachIndex === -1) {
+      accounts.unshift({
+        id: 'usr-thach',
+        username: 'thach',
+        password: '123456',
+        tenHienThi: 'Thạch',
+        vaiTro: 'ADMIN',
+        avatar: 'preset-admin',
+        ngayTao: '2026-01-01 08:00:00',
+      });
+      modified = true;
+    } else {
+      if (accounts[thachIndex].password !== '123456' || accounts[thachIndex].vaiTro !== 'ADMIN') {
+        accounts[thachIndex].password = '123456';
+        accounts[thachIndex].vaiTro = 'ADMIN';
+        modified = true;
+      }
+    }
+
+    // Đảm bảo tài khoản 'admin' (pass: Langbat136@)
+    const adminIndex = accounts.findIndex(a => a.username.toLowerCase() === 'admin');
+    if (adminIndex === -1) {
+      accounts.push({
+        id: 'usr-admin',
+        username: 'admin',
+        password: 'Langbat136@',
+        tenHienThi: 'Admin',
+        vaiTro: 'ADMIN',
+        avatar: 'preset-admin',
+        ngayTao: '2026-01-01 08:00:00',
+      });
+      modified = true;
+    } else {
+      if (accounts[adminIndex].password !== 'Langbat136@' || accounts[adminIndex].vaiTro !== 'ADMIN') {
+        accounts[adminIndex].password = 'Langbat136@';
+        accounts[adminIndex].vaiTro = 'ADMIN';
+        modified = true;
+      }
+    }
+
+    if (modified || accounts.length === 0) {
+      this.saveUserAccounts(accounts);
+    }
+    return accounts;
   }
 
   static saveUserAccounts(users: UserAccount[]): void {
@@ -292,35 +178,11 @@ export class PayrollDatabase {
   // Lấy danh sách nhân viên
   static getEmployees(): NhanVien[] {
     const saved = localStorage.getItem(DB_PREFIX + 'employees');
-    if (saved) {
+    if (saved !== null) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          let modified = false;
-          const employeesWithTeam = parsed.map((emp: NhanVien) => {
-            if (!emp.doiId) {
-              modified = true;
-              return {
-                ...emp,
-                doiId: emp.id === 'emp-toi' ? 'doi-2' : 'doi-1',
-              };
-            }
-            return emp;
-          });
-
-          // Check if emp-an exists
-          if (!employeesWithTeam.some(e => e.id === 'emp-an')) {
-            const empAn = INITIAL_EMPLOYEES.find(e => e.id === 'emp-an');
-            if (empAn) {
-              employeesWithTeam.push(empAn);
-              modified = true;
-            }
-          }
-
-          if (modified) {
-            this.saveEmployees(employeesWithTeam);
-          }
-          return employeesWithTeam;
+        if (Array.isArray(parsed)) {
+          return parsed;
         }
       } catch (e) {
         console.error('Lỗi đọc employees từ DB:', e);

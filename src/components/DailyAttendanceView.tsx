@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateDailyPayroll } from '../utils/payrollEngine';
 import { formatDateVN, formatNumber, formatVND, getDayOfWeekVN } from '../utils/formatters';
+import { ConfirmModal } from './ConfirmModal';
 import {
   Calendar,
   ChevronLeft,
@@ -60,6 +61,7 @@ export const DailyAttendanceView: React.FC = () => {
   const [priceOverrideReason, setPriceOverrideReason] = useState<string>('');
   const [showOverridePrice, setShowOverridePrice] = useState<boolean>(false);
   const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]);
+  const [isDeletingModalOpen, setIsDeletingModalOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({
     type: null,
     message: '',
@@ -87,8 +89,16 @@ export const DailyAttendanceView: React.FC = () => {
 
   // Check if this date is locked
   const isLocked = existingRecord?.trangThai === 'DA_CHOT';
+  const isAdmin = currentUser.vaiTro === 'ADMIN';
+  const isDoiTruong = currentUser.vaiTro === 'DOI_TRUONG';
   const isEmployee = currentUser.vaiTro === 'NHAN_VIEN';
-  const canEdit = !isEmployee && (!isLocked || currentUser.vaiTro === 'ADMIN');
+
+  // Quy định phân quyền:
+  // - Admin: Toàn quyền chấm công, chỉnh sửa, xóa bản ghi chấm công.
+  // - Đội trưởng: Được chấm công cho đội mình khi ngày này CHƯA có bản ghi (!existingRecord && !isLocked). Sau khi đã chấm công, KHÔNG được quyền sửa hoặc xóa.
+  // - Nhân viên: Chế độ chỉ đọc.
+  const canEdit = isAdmin ? true : (isDoiTruong ? (!existingRecord && !isLocked) : false);
+  const canDelete = isAdmin && !!existingRecord;
 
   // Logged-in employee (for data isolation when role is NHAN_VIEN)
   const loggedInEmployee = useMemo(() => {
@@ -236,10 +246,14 @@ export const DailyAttendanceView: React.FC = () => {
   // Handle Delete
   const handleDelete = () => {
     if (!existingRecord) return;
-    if (window.confirm(`Bạn có chắc muốn xoá dữ liệu chấm công ngày ${formatDateVN(selectedDate)}?`)) {
-      deleteDailyAttendance(existingRecord.id);
-      setSaveStatus({ type: 'success', message: 'Đã xoá bản ghi chấm công.' });
-    }
+    setIsDeletingModalOpen(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!existingRecord) return;
+    deleteDailyAttendance(existingRecord.id);
+    setIsDeletingModalOpen(false);
+    setSaveStatus({ type: 'success', message: 'Đã xoá bản ghi chấm công ngày ' + formatDateVN(selectedDate) });
   };
 
   return (
@@ -406,8 +420,21 @@ export const DailyAttendanceView: React.FC = () => {
           )}
         </div>
 
+        {/* Captain Attendance status banner */}
+        {isDoiTruong && existingRecord && (
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-950 flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold">Đội trưởng đã hoàn thành chấm công ngày {formatDateVN(selectedDate)}.</span>
+              <p className="mt-0.5 text-[11px] text-blue-800">
+                Theo quy định phân quyền, sau khi đã chấm công, Đội trưởng không được quyền sửa hoặc xóa. Chỉ Quản trị viên mới có quyền điều chỉnh hoặc xóa bảng chấm công đã lưu.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Lock warning for field captain */}
-        {isLocked && (
+        {isLocked && !isDoiTruong && (
           <div className="mt-4 p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex items-start gap-2">
             <Lock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
             <div>
@@ -415,7 +442,7 @@ export const DailyAttendanceView: React.FC = () => {
               {currentUser.vaiTro === 'ADMIN' ? (
                 <span>Bạn đang đăng nhập với tư cách Quản trị viên nên vẫn có thể điều chỉnh và ghi audit log.</span>
               ) : (
-                <span>Chế độ chỉ đọc. Đội trưởng không thể sửa dữ liệu ngày đã chốt sổ.</span>
+                <span>Chế độ chỉ đọc. Không thể sửa dữ liệu ngày đã chốt sổ.</span>
               )}
             </div>
           </div>
@@ -683,7 +710,7 @@ export const DailyAttendanceView: React.FC = () => {
 
             {/* Action Bar: Save & Delete */}
             <div className="pt-4 border-t border-stone-100 flex flex-col sm:flex-row items-center justify-between gap-3">
-              {existingRecord && canEdit && (
+              {canDelete && (
                 <button
                   type="button"
                   onClick={handleDelete}
@@ -695,16 +722,23 @@ export const DailyAttendanceView: React.FC = () => {
               )}
 
               <div className="flex items-center gap-3 w-full sm:w-auto sm:ml-auto">
-                <button
-                  type="button"
-                  id="btn-save-attendance"
-                  disabled={!canEdit}
-                  onClick={handleSave}
-                  className="w-full sm:w-auto px-6 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 disabled:bg-stone-300 text-white font-bold text-sm shadow-md shadow-orange-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Save className="w-4 h-4" />
-                  {existingRecord ? 'Cập nhật chấm công' : 'Lưu chấm công & Tính lương'}
-                </button>
+                {isDoiTruong && existingRecord ? (
+                  <div className="text-xs font-bold text-stone-600 bg-stone-100 px-4 py-2.5 rounded-xl border border-stone-200 flex items-center gap-2">
+                    <Lock className="w-3.5 h-3.5 text-stone-500" />
+                    <span>Đã chấm công (Chỉ Quản trị viên mới được quyền xóa/sửa)</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    id="btn-save-attendance"
+                    disabled={!canEdit}
+                    onClick={handleSave}
+                    className="w-full sm:w-auto px-6 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 disabled:bg-stone-300 text-white font-bold text-sm shadow-md shadow-orange-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    {existingRecord ? 'Cập nhật chấm công' : 'Lưu chấm công & Tính lương'}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -926,6 +960,19 @@ export const DailyAttendanceView: React.FC = () => {
           </button>
         </div>
       )}
+      {/* Confirmation Modal for Deleting Attendance Record */}
+      <ConfirmModal
+        isOpen={isDeletingModalOpen}
+        title="Xác nhận xóa Bảng chấm công ngày"
+        message="Bạn có chắc chắn muốn xóa dữ liệu chấm công của ngày này? Thao tác này sẽ giải phóng dữ liệu và đặt ngày này về trạng thái chưa chấm công."
+        itemName={`Ngày ${formatDateVN(selectedDate)} (${getDayOfWeekVN(selectedDate)}) - ${currentTeam?.tenDoi || 'Đội bắt gà'}`}
+        itemDetail={`Sản lượng: ${formatNumber(existingRecord?.soGaBatDuoc || 0)} con gà | Tổng quỹ lương: ${formatVND(existingRecord?.tongLuongNgay || 0)}`}
+        confirmText="Xác nhận xóa bản ghi"
+        cancelText="Hủy bỏ"
+        type="danger"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setIsDeletingModalOpen(false)}
+      />
     </div>
   );
 };

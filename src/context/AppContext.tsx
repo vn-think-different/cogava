@@ -34,7 +34,7 @@ interface AppContextType {
   auditLogs: NhatKyThayDoi[];
   userAccounts: UserAccount[];
   currentUser: UserSession;
-  setCurrentUser: (user: UserSession) => void;
+  setCurrentUser: (user: UserSession | ((prev: UserSession) => UserSession)) => void;
   availableUsers: UserSession[];
   isAuthenticated: boolean;
   login: (user: UserSession) => void;
@@ -71,7 +71,9 @@ interface AppContextType {
   // Quản lý nhân viên
   addEmployee: (data: Omit<NhanVien, 'id'>) => void;
   updateEmployee: (id: string, data: Partial<NhanVien>) => void;
+  deleteEmployee: (id: string) => { success: boolean; message: string };
   toggleEmployeeStatus: (id: string) => void;
+  appointCaptain: (teamId: string, empId: string) => { success: boolean; message: string };
 
   // Chấm công & tính lương
   saveDailyAttendance: (input: SaveAttendanceInput) => { success: boolean; message: string };
@@ -86,7 +88,7 @@ interface AppContextType {
   resetToSampleData: () => void;
 }
 
-const LOCAL_STORAGE_SESSION_KEY = 'cogava_payroll_auth_session';
+const LOCAL_STORAGE_SESSION_KEY = 'cogava_payroll_auth_session_v3';
 
 const AppContext = createContext<AppContextType | null>(null);
 
@@ -161,9 +163,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   }, [userAccounts]);
 
-  const setCurrentUser = (user: UserSession) => {
-    setCurrentUserState(user);
-    localStorage.setItem(LOCAL_STORAGE_SESSION_KEY + '_user', JSON.stringify(user));
+  const setCurrentUser = (userOrUpdater: UserSession | ((prev: UserSession) => UserSession)) => {
+    setCurrentUserState(prev => {
+      const next = typeof userOrUpdater === 'function' ? userOrUpdater(prev) : userOrUpdater;
+      localStorage.setItem(LOCAL_STORAGE_SESSION_KEY + '_user', JSON.stringify(next));
+      return next;
+    });
   };
 
   const login = (user: UserSession) => {
@@ -529,12 +534,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (currentUser.vaiTro !== 'ADMIN') {
       return { success: false, message: 'Chỉ Quản trị viên mới có quyền xóa Đội!' };
     }
+    const targetTeam = teams.find(t => t.id === id);
+    const teamName = targetTeam?.tenDoi || id;
+
+    // 1. Xóa đội khỏi CSDL Teams
     const res = PayrollDatabase.deleteTeam(id);
-    if (res.success) {
-      setTeams(PayrollDatabase.getTeams());
-      createAuditLog('DoiNhanVien', id, 'XOA', `Xóa đội ${id}`);
-    }
-    return res;
+    if (!res.success) return res;
+
+    setTeams(prev => prev.filter(t => t.id !== id));
+
+    // 2. Cập nhật nhân viên thuộc đội này (bỏ liên kết đội)
+    setEmployees(prev => {
+      const updated = prev.map(emp => (emp.doiId === id ? { ...emp, doiId: '' } : emp));
+      PayrollDatabase.saveEmployees(updated);
+      return updated;
+    });
+
+    // 3. Cập nhật tài khoản người dùng liên kết
+    setUserAccounts(prev => {
+      const updated = prev.map(u => (u.doiId === id ? { ...u, doiId: undefined } : u));
+      PayrollDatabase.saveUserAccounts(updated);
+      return updated;
+    });
+
+    createAuditLog('DoiNhanVien', id, 'XOA', `Xóa đội "${teamName}" khỏi hệ thống`);
+    return { success: true, message: `Đã xóa "${teamName}" thành công!` };
   };
 
   const assignEmployeeToTeam = (empId: string, teamId: string) => {
@@ -661,6 +685,97 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       { ...currentEmp },
       { ...data }
     );
+  };
+
+  const deleteEmployee = (id: string): { success: boolean; message: string } => {
+    const currentEmp = employees.find(e => e.id === id);
+    if (!currentEmp) {
+      return { success: false, message: 'Không tìm thấy nhân viên!' };
+    }
+
+    // 1. Xóa nhân viên khỏi danh sách
+    setEmployees(prev => {
+      const updated = prev.filter(emp => emp.id !== id);
+      PayrollDatabase.saveEmployees(updated);
+      return updated;
+    });
+
+    // 2. Xóa tài khoản người dùng tương ứng nếu có
+    setUserAccounts(prev => {
+      const updated = prev.filter(u => u.nhanVienId !== id);
+      PayrollDatabase.saveUserAccounts(updated);
+      return updated;
+    });
+
+    // 3. Nếu nhân viên là Đội trưởng của đội nào đó, gỡ bỏ chức vụ đội trưởng
+    setTeams(prev => {
+      const updated = prev.map(t => {
+        if (
+          (t.doiTruongTen && t.doiTruongTen.trim().toLowerCase() === currentEmp.hoTen.trim().toLowerCase()) ||
+          t.doiTruongUserId === currentEmp.id
+        ) {
+          return {
+            ...t,
+            doiTruongTen: undefined,
+            doiTruongUserId: undefined,
+          };
+        }
+        return t;
+      });
+      PayrollDatabase.saveTeams(updated);
+      return updated;
+    });
+
+    createAuditLog(
+      'NhanVien',
+      id,
+      'XOA',
+      `Xóa nhân viên ${currentEmp.hoTen} khỏi hệ thống`,
+      { ...currentEmp },
+      null
+    );
+
+    return { success: true, message: `Đã xóa nhân viên ${currentEmp.hoTen} thành công!` };
+  };
+
+  const appointCaptain = (teamId: string, empId: string): { success: boolean; message: string } => {
+    const team = teams.find(t => t.id === teamId);
+    const emp = employees.find(e => e.id === empId);
+
+    if (!team) return { success: false, message: 'Không tìm thấy đội!' };
+    if (!emp) return { success: false, message: 'Không tìm thấy nhân viên!' };
+
+    // Tìm tài khoản người dùng của nhân viên
+    let userAcc = userAccounts.find(u => u.nhanVienId === empId);
+
+    // Cập nhật đội
+    const updatedTeam: DoiNhanVien = {
+      ...team,
+      doiTruongUserId: userAcc?.id || undefined,
+      doiTruongTen: emp.hoTen,
+    };
+    updateTeam(teamId, updatedTeam);
+
+    // Nếu có tài khoản, nâng quyền lên DOI_TRUONG
+    if (userAcc) {
+      setUserAccounts(prev => {
+        const updated = prev.map(u => (u.id === userAcc!.id ? { ...u, vaiTro: 'DOI_TRUONG' as const, doiId: teamId } : u));
+        PayrollDatabase.saveUserAccounts(updated);
+        return updated;
+      });
+    }
+
+    createAuditLog(
+      'DoiNhanVien',
+      teamId,
+      'SUA',
+      `Bổ nhiệm ${emp.hoTen} làm Đội trưởng cho đội "${team.tenDoi}"`
+    );
+
+    return {
+      success: true,
+      message: `Đã bổ nhiệm ${emp.hoTen} làm Đội trưởng cho "${team.tenDoi}" thành công!`,
+    };
   };
 
   const toggleEmployeeStatus = (id: string) => {
@@ -909,7 +1024,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addConfig,
     addEmployee,
     updateEmployee,
+    deleteEmployee,
     toggleEmployeeStatus,
+    appointCaptain,
     saveDailyAttendance,
     deleteDailyAttendance,
     isMonthLocked,
