@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "Team": {
+      "collection": "teams",
+      "fields": {
+        "id": { "type": "string" },
+        "tenDoi": { "type": "string" },
+        "khuVuc": { "type": "string" },
+        "doiTruongId": { "type": "string" },
+        "doiTruongTen": { "type": "string" },
+        "soThanhVien": { "type": "number" },
+        "moTa": { "type": "string" },
+        "ngayTao": { "type": "string" }
+      }
+    },
+    "Employee": {
+      "collection": "employees",
+      "fields": {
+        "id": { "type": "string" },
+        "hoTen": { "type": "string" },
+        "vaiTro": { "type": "string" },
+        "tyLe": { "type": "number" },
+        "sdt": { "type": "string" },
+        "soTaiKhoan": { "type": "string" },
+        "nganHang": { "type": "string" },
+        "tenChuTaiKhoan": { "type": "string" },
+        "soCccd": { "type": "string" },
+        "cccdNgayCap": { "type": "string" },
+        "cccdNoiCap": { "type": "string" },
+        "cccdMatTruoc": { "type": "string" },
+        "cccdMatSau": { "type": "string" },
+        "ghiChu": { "type": "string" },
+        "trangThai": { "type": "string" },
+        "doiId": { "type": "string" },
+        "ngayVaoLam": { "type": "string" }
+      }
+    },
+    "AttendanceRecord": {
+      "collection": "attendance_records",
+      "fields": {
+        "id": { "type": "string" },
+        "ngay": { "type": "string" },
+        "thuTrongTuan": { "type": "string" },
+        "doiId": { "type": "string" },
+        "soGaBatDuoc": { "type": "number" },
+        "donGiaApDung": { "type": "number" },
+        "ghiChuDonGia": { "type": "string" },
+        "tongLuongNgay": { "type": "number" },
+        "chiTiet": { "type": "array" },
+        "nguoiCham": { "type": "string" },
+        "thoiGianTao": { "type": "string" },
+        "thoiGianCapNhat": { "type": "string" },
+        "trangThai": { "type": "string" }
+      }
+    },
+    "Config": {
+      "collection": "configs",
+      "fields": {
+        "id": { "type": "string" },
+        "apDungTuNgay": { "type": "string" },
+        "donGiaBinhQuan": { "type": "number" },
+        "tyLeLuongChinh": { "type": "number" },
+        "tyLeLuongPhu": { "type": "number" },
+        "ghiChu": { "type": "string" },
+        "ngayTao": { "type": "string" },
+        "nguoiTao": { "type": "string" }
+      }
+    },
+    "UserAccount": {
+      "collection": "users",
+      "fields": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "tenHienThi": { "type": "string" },
+        "vaiTro": { "type": "string" },
+        "nhanVienId": { "type": "string" },
+        "doiId": { "type": "string" },
+        "avatar": { "type": "string" },
+        "sdt": { "type": "string" },
+        "email": { "type": "string" },
+        "soCccd": { "type": "string" },
+        "cccdNgayCap": { "type": "string" },
+        "cccdNoiCap": { "type": "string" },
+        "cccdMatTruoc": { "type": "string" },
+        "cccdMatSau": { "type": "string" },
+        "ngayTao": { "type": "string" }
+      }
+    },
+    "AuditLog": {
+      "collection": "audit_logs",
+      "fields": {
+        "id": { "type": "string" },
+        "bang": { "type": "string" },
+        "banGhiId": { "type": "string" },
+        "nguoiThucHien": { "type": "string" },
+        "vaiTroNguoiThucHien": { "type": "string" },
+        "thoiGian": { "type": "string" },
+        "hanhDong": { "type": "string" },
+        "moTa": { "type": "string" },
+        "giaTriCu": { "type": "object" },
+        "giaTriMoi": { "type": "object" }
+      }
+    },
+    "CompanyInfo": {
+      "collection": "company_info",
+      "fields": {
+        "id": { "type": "string" },
+        "tenCongTy": { "type": "string" },
+        "tenThuongHieu": { "type": "string" },
+        "diaChi": { "type": "string" },
+        "soDienThoai": { "type": "string" },
+        "email": { "type": "string" },
+        "maSoThue": { "type": "string" },
+        "logoUrl": { "type": "string" }
+      }
+    }
+  }
+}

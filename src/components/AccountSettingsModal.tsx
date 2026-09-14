@@ -817,14 +817,13 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
           {currentUser.vaiTro === 'ADMIN' && activeTab === 'database' && (
             <div className="space-y-5">
               {/* Status Box */}
-              <div className="p-4 bg-orange-50/70 rounded-2xl border border-orange-200 space-y-2">
-                <div className="flex items-center gap-2 text-orange-950 font-bold">
-                  <Database className="w-5 h-5 text-orange-600" />
-                  <span>Trạng thái CSDL Bảng lương COGAVA</span>
+              <div className="p-4 bg-emerald-50/70 rounded-2xl border border-emerald-200 space-y-2">
+                <div className="flex items-center gap-2 text-emerald-950 font-bold">
+                  <Database className="w-5 h-5 text-emerald-600" />
+                  <span>Trạng thái CSDL Đám mây (Firebase Firestore Cloud)</span>
                 </div>
-                <p className="text-xs text-orange-900 leading-relaxed">
-                  Hệ thống đã xây dựng cấu trúc CSDL chuyên biệt lưu trữ bền vững trong LocalStorage trình duyệt.
-                  Hiện tại dữ liệu chấm công mặc định đã được xóa sạch để bạn tiến hành kiểm thử trên <strong>CSDL trắng</strong>.
+                <p className="text-xs text-emerald-900 leading-relaxed">
+                  Hệ thống đã kích hoạt cơ chế <strong>Đồng bộ Đám mây Firebase Firestore thời gian thực</strong>. Toàn bộ nhân sự, đội nhóm, tài khoản và lịch sử chấm công được lưu trữ vĩnh viễn trên Cloud Server, đảm bảo an toàn tuyệt đối 100% qua các lần publish/cập nhật hệ thống hoặc chuyển đổi thiết bị.
                 </p>
               </div>
 

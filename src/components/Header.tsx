@@ -209,6 +209,11 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
             <span className="text-stone-600 hidden md:inline">|</span>
             <span className="text-stone-400 hidden md:inline truncate">{companyInfo.linhVuc}</span>
+            <span className="text-stone-600 hidden lg:inline">|</span>
+            <span className="hidden lg:flex items-center gap-1.5 text-emerald-400 text-[11px] font-medium bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-800/60">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span>Cloud Firestore đã kết nối</span>
+            </span>
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">

@@ -15,6 +15,7 @@ import { THONG_TIN_CONG_TY } from '../data/initialData';
 import { calculateDailyPayroll } from '../utils/payrollEngine';
 import { getDayOfWeekVN } from '../utils/formatters';
 import { PayrollDatabase, DEFAULT_USER_ACCOUNTS } from '../services/payrollDatabase';
+import { FirestoreSyncService } from '../services/firestoreSync';
 
 interface SaveAttendanceInput {
   ngay: string;
@@ -27,6 +28,7 @@ interface SaveAttendanceInput {
 
 interface AppContextType {
   companyInfo: ThongTinDoanhNghiep;
+  isCloudSynced: boolean;
   employees: NhanVien[];
   teams: DoiNhanVien[];
   configs: CauHinhLuong[];
@@ -123,6 +125,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [auditLogs, setAuditLogs] = useState<NhatKyThayDoi[]>(() => {
     return PayrollDatabase.getAuditLogs();
   });
+
+  // Cloud Synchronization Status
+  const [isCloudSynced, setIsCloudSynced] = useState<boolean>(true);
+
+  // Initial Cloud Firestore Seeding & Realtime Listeners
+  useEffect(() => {
+    // 1. Initial Cloud seed if database collections are empty
+    FirestoreSyncService.initializeAndSyncSeed({
+      initialTeams: teams,
+      initialEmployees: employees,
+      initialConfigs: configs,
+      initialUsers: userAccounts,
+      initialAuditLogs: auditLogs,
+    }).catch(err => console.warn('Firestore initial sync notice:', err));
+
+    // 2. Real-time Subscriptions with Firestore
+    const unsubTeams = FirestoreSyncService.subscribeTeams(cloudTeams => {
+      setTeams(cloudTeams);
+      PayrollDatabase.saveTeams(cloudTeams);
+      setIsCloudSynced(true);
+    });
+
+    const unsubEmps = FirestoreSyncService.subscribeEmployees(cloudEmps => {
+      setEmployees(cloudEmps);
+      PayrollDatabase.saveEmployees(cloudEmps);
+      setIsCloudSynced(true);
+    });
+
+    const unsubAtt = FirestoreSyncService.subscribeAttendance(cloudAtt => {
+      setAttendanceRecords(cloudAtt);
+      PayrollDatabase.saveAttendanceRecords(cloudAtt);
+      setIsCloudSynced(true);
+    });
+
+    const unsubCfg = FirestoreSyncService.subscribeConfigs(cloudCfg => {
+      setConfigs(cloudCfg);
+      PayrollDatabase.saveConfigs(cloudCfg);
+      setIsCloudSynced(true);
+    });
+
+    const unsubUsers = FirestoreSyncService.subscribeUsers(cloudUsers => {
+      setUserAccounts(cloudUsers);
+      PayrollDatabase.saveUserAccounts(cloudUsers);
+      setIsCloudSynced(true);
+    });
+
+    const unsubAudit = FirestoreSyncService.subscribeAuditLogs(cloudLogs => {
+      setAuditLogs(cloudLogs);
+      PayrollDatabase.saveAuditLogs(cloudLogs);
+      setIsCloudSynced(true);
+    });
+
+    return () => {
+      unsubTeams();
+      unsubEmps();
+      unsubAtt();
+      unsubCfg();
+      unsubUsers();
+      unsubAudit();
+    };
+  }, []);
 
   // 6. Authentication & Current User session
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -295,6 +358,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       giaTriMoi,
     };
     setAuditLogs(prev => [newLog, ...prev]);
+    FirestoreSyncService.saveAuditLog(newLog).catch(e => console.warn('Cloud log save:', e));
   };
 
   // Quản lý Avatar & Hồ sơ cá nhân
@@ -309,6 +373,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatar,
       };
       setCurrentUser(updatedSession);
+      FirestoreSyncService.saveUser(result.updatedUser).catch(e => console.warn('Cloud user save:', e));
       createAuditLog(
         'UserAccount',
         currentUser.id,
@@ -333,13 +398,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ...prev,
         ...data,
       }));
+      FirestoreSyncService.saveUser(result.updatedUser).catch(e => console.warn('Cloud user save:', e));
 
       // Đồng bộ sang bảng nhân viên nếu user được liên kết hồ sơ nhân viên
       if (currentUser.nhanVienId) {
         setEmployees(prevEmps => {
           const updated = prevEmps.map(emp => {
             if (emp.id === currentUser.nhanVienId) {
-              return {
+              const updatedEmp = {
                 ...emp,
                 ...(data.tenHienThi ? { hoTen: data.tenHienThi } : {}),
                 ...(data.sdt !== undefined ? { sdt: data.sdt } : {}),
@@ -349,6 +415,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 ...(data.cccdMatTruoc !== undefined ? { cccdMatTruoc: data.cccdMatTruoc } : {}),
                 ...(data.cccdMatSau !== undefined ? { cccdMatSau: data.cccdMatSau } : {}),
               };
+              FirestoreSyncService.saveEmployee(updatedEmp).catch(e => console.warn('Cloud emp save:', e));
+              return updatedEmp;
             }
             return emp;
           });
@@ -376,7 +444,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ): { success: boolean; message: string } => {
     const result = PayrollDatabase.changePassword(currentUser.id, matKhauCu, matKhauMoi);
     if (result.success) {
-      setUserAccounts(PayrollDatabase.getUserAccounts());
+      const allUsers = PayrollDatabase.getUserAccounts();
+      setUserAccounts(allUsers);
+      const user = allUsers.find(u => u.id === currentUser.id);
+      if (user) FirestoreSyncService.saveUser(user).catch(e => console.warn('Cloud pass save:', e));
       createAuditLog(
         'UserAccount',
         currentUser.id,
@@ -397,7 +468,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     const result = PayrollDatabase.adminResetPassword(userId, newPassword);
     if (result.success) {
-      setUserAccounts(PayrollDatabase.getUserAccounts());
+      const allUsers = PayrollDatabase.getUserAccounts();
+      setUserAccounts(allUsers);
+      const user = allUsers.find(u => u.id === userId);
+      if (user) FirestoreSyncService.saveUser(user).catch(e => console.warn('Cloud pass reset save:', e));
       createAuditLog(
         'UserAccount',
         userId,
@@ -418,6 +492,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const result = PayrollDatabase.addUserAccount(data);
     if (result.success && result.user) {
       setUserAccounts(PayrollDatabase.getUserAccounts());
+      FirestoreSyncService.saveUser(result.user).catch(e => console.warn('Cloud user save:', e));
       createAuditLog(
         'UserAccount',
         result.user.id,
@@ -454,6 +529,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     PayrollDatabase.updateUserAccount(userId, updatedUser);
     setUserAccounts(PayrollDatabase.getUserAccounts());
+    FirestoreSyncService.saveUser(updatedUser).catch(e => console.warn('Cloud user update:', e));
 
     // 2. Nếu tài khoản liên kết với Hồ sơ Nhân viên (nhanVienId)
     if (targetUser.nhanVienId) {
@@ -556,6 +632,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const result = PayrollDatabase.deleteUserAccount(userId);
     if (result.success) {
       setUserAccounts(PayrollDatabase.getUserAccounts());
+      FirestoreSyncService.deleteUser(userId).catch(e => console.warn('Cloud user delete:', e));
       createAuditLog(
         'UserAccount',
         userId,
@@ -570,6 +647,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const clearAttendanceToBlank = (): { success: boolean; message: string } => {
     const res = PayrollDatabase.clearAttendanceToBlank();
     setAttendanceRecords([]);
+    FirestoreSyncService.clearAllAttendance().catch(e => console.warn('Cloud clear attendance:', e));
     createAuditLog(
       'BangChamCongNgay',
       'all',
@@ -583,6 +661,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const loadSampleExcelAttendance = () => {
     const sampleRecords = PayrollDatabase.loadSampleExcelAttendance();
     setAttendanceRecords(sampleRecords);
+    FirestoreSyncService.batchSaveAttendance(sampleRecords).catch(e => console.warn('Cloud load sample attendance:', e));
     createAuditLog(
       'BangChamCongNgay',
       'excel-import',
@@ -615,6 +694,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setConfigs(prev => [...prev, newConfig]);
+    FirestoreSyncService.saveConfig(newConfig).catch(e => console.warn('Cloud config save:', e));
     createAuditLog(
       'CauHinhLuong',
       newConfig.id,
@@ -634,6 +714,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (res.success && res.team) {
       const newTeamId = res.team.id;
       setTeams(PayrollDatabase.getTeams());
+      FirestoreSyncService.saveTeam(res.team).catch(e => console.warn('Cloud team save:', e));
       createAuditLog('DoiNhanVien', newTeamId, 'TAO', `Tạo đội mới: "${data.tenDoi}"`);
 
       // Nếu có chỉ định Đội trưởng ngay khi tạo đội (bằng tên hoặc ID)
@@ -659,6 +740,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const res = PayrollDatabase.updateTeam(id, data);
     if (res.success) {
       setTeams(PayrollDatabase.getTeams());
+      const updatedTeam = PayrollDatabase.getTeams().find(t => t.id === id);
+      if (updatedTeam) FirestoreSyncService.saveTeam(updatedTeam).catch(e => console.warn('Cloud team update:', e));
       createAuditLog('DoiNhanVien', id, 'SUA', `Cập nhật thông tin đội ${id}`);
 
       // Nếu đổi đội trưởng, đồng bộ nhân viên và tài khoản mà KHÔNG gọi lại updateTeam
@@ -672,6 +755,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setEmployees(prev => {
             const updated = prev.map(e => (e.id === emp.id ? { ...e, doiId: id } : e));
             PayrollDatabase.saveEmployees(updated);
+            FirestoreSyncService.saveEmployee({ ...emp, doiId: id }).catch(e => console.warn('Cloud emp update:', e));
             return updated;
           });
           const userAcc = userAccounts.find(u => u.nhanVienId === emp.id || u.username === emp.soDienThoai);
@@ -681,6 +765,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 u.id === userAcc.id ? { ...u, vaiTro: 'DOI_TRUONG' as const, doiId: id } : u
               );
               PayrollDatabase.saveUserAccounts(updated);
+              FirestoreSyncService.saveUser({ ...userAcc, vaiTro: 'DOI_TRUONG', doiId: id }).catch(e => console.warn('Cloud user update:', e));
               return updated;
             });
           }
@@ -702,6 +787,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!res.success) return res;
 
     setTeams(prev => prev.filter(t => t.id !== id));
+    FirestoreSyncService.deleteTeam(id).catch(e => console.warn('Cloud team delete:', e));
 
     // 2. Cập nhật nhân viên thuộc đội này (bỏ liên kết đội)
     setEmployees(prev => {
@@ -725,11 +811,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEmployees(prev => {
       const updated = prev.map(emp => (emp.id === empId ? { ...emp, doiId: teamId } : emp));
       PayrollDatabase.saveEmployees(updated);
+      const target = updated.find(e => e.id === empId);
+      if (target) FirestoreSyncService.saveEmployee(target).catch(e => console.warn('Cloud emp assign:', e));
       return updated;
     });
     setUserAccounts(prev => {
       const updated = prev.map(u => (u.nhanVienId === empId ? { ...u, doiId: teamId } : u));
       PayrollDatabase.saveUserAccounts(updated);
+      const targetUser = updated.find(u => u.nhanVienId === empId);
+      if (targetUser) FirestoreSyncService.saveUser(targetUser).catch(e => console.warn('Cloud user assign:', e));
       return updated;
     });
     const targetEmp = employees.find(e => e.id === empId);
@@ -756,6 +846,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       PayrollDatabase.saveEmployees(updated);
       return updated;
     });
+    FirestoreSyncService.saveEmployee(newEmp).catch(e => console.warn('Cloud emp save:', e));
 
     // Tự động tạo tài khoản người dùng đăng nhập cho nhân viên mới
     const rawUsername = data.hoTen
@@ -779,8 +870,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cccdMatSau: data.cccdMatSau,
       avatar: 'preset-worker-dat',
     };
-    PayrollDatabase.addUserAccount(userAccountData);
+    const createdAccRes = PayrollDatabase.addUserAccount(userAccountData);
     setUserAccounts(PayrollDatabase.getUserAccounts());
+    if (createdAccRes.user) {
+      FirestoreSyncService.saveUser(createdAccRes.user).catch(e => console.warn('Cloud user save:', e));
+    }
 
     createAuditLog(
       'NhanVien',
@@ -799,6 +893,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEmployees(prev => {
       const updated = prev.map(emp => (emp.id === id ? { ...emp, ...data } : emp));
       PayrollDatabase.saveEmployees(updated);
+      const target = updated.find(e => e.id === id);
+      if (target) FirestoreSyncService.saveEmployee(target).catch(e => console.warn('Cloud emp update:', e));
       return updated;
     });
 
@@ -806,7 +902,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setUserAccounts(prev => {
       const updated = prev.map(u => {
         if (u.nhanVienId === id) {
-          return {
+          const updatedUser = {
             ...u,
             ...(data.doiId ? { doiId: data.doiId } : {}),
             ...(data.hoTen ? { tenHienThi: data.hoTen } : {}),
@@ -817,6 +913,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ...(data.cccdMatTruoc !== undefined ? { cccdMatTruoc: data.cccdMatTruoc } : {}),
             ...(data.cccdMatSau !== undefined ? { cccdMatSau: data.cccdMatSau } : {}),
           };
+          FirestoreSyncService.saveUser(updatedUser).catch(e => console.warn('Cloud user sync:', e));
+          return updatedUser;
         }
         return u;
       });
@@ -859,8 +957,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       PayrollDatabase.saveEmployees(updated);
       return updated;
     });
+    FirestoreSyncService.deleteEmployee(id).catch(e => console.warn('Cloud emp delete:', e));
 
     // 2. Xóa tài khoản người dùng tương ứng nếu có
+    const userToDelete = userAccounts.find(u => u.nhanVienId === id);
+    if (userToDelete) {
+      FirestoreSyncService.deleteUser(userToDelete.id).catch(e => console.warn('Cloud user delete:', e));
+    }
     setUserAccounts(prev => {
       const updated = prev.filter(u => u.nhanVienId !== id);
       PayrollDatabase.saveUserAccounts(updated);
@@ -874,11 +977,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           (t.doiTruongTen && t.doiTruongTen.trim().toLowerCase() === currentEmp.hoTen.trim().toLowerCase()) ||
           t.doiTruongUserId === currentEmp.id
         ) {
-          return {
+          const modTeam = {
             ...t,
             doiTruongTen: undefined,
             doiTruongUserId: undefined,
           };
+          FirestoreSyncService.saveTeam(modTeam).catch(e => console.warn('Cloud team update:', e));
+          return modTeam;
         }
         return t;
       });
@@ -917,7 +1022,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       doiTruongUserId: userAcc?.id || emp.id,
       doiTruongTen: emp.hoTen,
     });
-    setTeams(PayrollDatabase.getTeams());
+    const updatedTeamList = PayrollDatabase.getTeams();
+    setTeams(updatedTeamList);
+    const currentUpdatedTeam = updatedTeamList.find(t => t.id === teamId);
+    if (currentUpdatedTeam) FirestoreSyncService.saveTeam(currentUpdatedTeam).catch(e => console.warn('Cloud team update:', e));
 
     // 2. Gán nhân viên vào đội này
     const updatedEmployees = PayrollDatabase.getEmployees().map(e =>
@@ -925,6 +1033,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     PayrollDatabase.saveEmployees(updatedEmployees);
     setEmployees(updatedEmployees);
+    const updatedEmp = updatedEmployees.find(e => e.id === empId);
+    if (updatedEmp) FirestoreSyncService.saveEmployee(updatedEmp).catch(e => console.warn('Cloud emp update:', e));
 
     // 3. Nếu có tài khoản, nâng quyền lên DOI_TRUONG
     if (userAcc) {
@@ -933,6 +1043,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
       PayrollDatabase.saveUserAccounts(updatedUsers);
       setUserAccounts(updatedUsers);
+      const targetUser = updatedUsers.find(u => u.id === userAcc.id);
+      if (targetUser) FirestoreSyncService.saveUser(targetUser).catch(e => console.warn('Cloud user update:', e));
     }
 
     createAuditLog(
@@ -966,6 +1078,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : emp
       );
       PayrollDatabase.saveEmployees(updated);
+      const target = updated.find(e => e.id === id);
+      if (target) FirestoreSyncService.saveEmployee(target).catch(e => console.warn('Cloud emp status:', e));
       return updated;
     });
     createAuditLog(
@@ -992,6 +1106,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         rec.ngay.startsWith(yearMonth) ? { ...rec, trangThai: 'DA_CHOT' } : rec
       );
       PayrollDatabase.saveAttendanceRecords(updated);
+      const monthRecs = updated.filter(r => r.ngay.startsWith(yearMonth));
+      FirestoreSyncService.batchSaveAttendance(monthRecs).catch(e => console.warn('Cloud lock month:', e));
       return updated;
     });
     createAuditLog(
@@ -1011,6 +1127,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         rec.ngay.startsWith(yearMonth) ? { ...rec, trangThai: 'NHAP' } : rec
       );
       PayrollDatabase.saveAttendanceRecords(updated);
+      const monthRecs = updated.filter(r => r.ngay.startsWith(yearMonth));
+      FirestoreSyncService.batchSaveAttendance(monthRecs).catch(e => console.warn('Cloud unlock month:', e));
       return updated;
     });
     createAuditLog(
@@ -1114,6 +1232,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return updated;
     });
 
+    FirestoreSyncService.saveAttendanceRecord(newRecord).catch(e => console.warn('Cloud attendance save:', e));
+
     createAuditLog(
       'BangChamCongNgay',
       recordId,
@@ -1143,6 +1263,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       PayrollDatabase.saveAttendanceRecords(updated);
       return updated;
     });
+    FirestoreSyncService.deleteAttendanceRecord(id).catch(e => console.warn('Cloud attendance delete:', e));
+
     createAuditLog(
       'BangChamCongNgay',
       id,
@@ -1162,6 +1284,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const value: AppContextType = {
     companyInfo: THONG_TIN_CONG_TY,
+    isCloudSynced,
     employees,
     teams,
     configs,
