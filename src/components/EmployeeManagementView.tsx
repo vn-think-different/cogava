@@ -1099,31 +1099,39 @@ export const EmployeeManagementView: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Bổ nhiệm đội trưởng từ danh sách nhân viên trong đội */}
-                      {teamMembers.length > 0 && (
-                        <div className="pt-2 border-t border-stone-200/60 flex items-center justify-between gap-2">
-                          <span className="text-[11px] font-semibold text-stone-600 flex items-center gap-1">
-                            <Award className="w-3.5 h-3.5 text-amber-600" />
-                            Bổ nhiệm Đội trưởng:
-                          </span>
-                          <select
-                            value={teamMembers.find(m => m.hoTen.toLowerCase() === team.doiTruongTen?.toLowerCase())?.id || ''}
-                            onChange={e => {
-                              if (e.target.value) {
-                                appointCaptain(team.id, e.target.value);
-                              }
-                            }}
-                            className="text-xs font-bold text-stone-800 bg-white border border-stone-300 rounded-lg px-2 py-1 cursor-pointer"
-                          >
-                            <option value="">-- Chọn nhân viên làm Đội trưởng --</option>
-                            {teamMembers.map(m => (
+                      {/* Bổ nhiệm đội trưởng từ toàn bộ danh sách nhân viên */}
+                      <div className="pt-2 border-t border-stone-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-stone-600 flex items-center gap-1">
+                          <Award className="w-3.5 h-3.5 text-amber-600" />
+                          Bổ nhiệm Đội trưởng:
+                        </span>
+                        <select
+                          value={
+                            employees.find(
+                              m =>
+                                (team.doiTruongUserId && m.id === team.doiTruongUserId) ||
+                                m.hoTen.trim().toLowerCase() === team.doiTruongTen?.trim().toLowerCase()
+                            )?.id || ''
+                          }
+                          onChange={e => {
+                            if (e.target.value) {
+                              const res = appointCaptain(team.id, e.target.value);
+                              showToast(res.message, res.success ? 'success' : 'error');
+                            }
+                          }}
+                          className="text-xs font-bold text-stone-800 bg-white border border-stone-300 rounded-lg px-2.5 py-1.5 cursor-pointer max-w-full sm:max-w-[280px]"
+                        >
+                          <option value="">-- Chọn nhân viên làm Đội trưởng ({employees.length}) --</option>
+                          {employees.map(m => {
+                            const isCurrent = (team.doiTruongUserId && m.id === team.doiTruongUserId) || m.hoTen.trim().toLowerCase() === team.doiTruongTen?.trim().toLowerCase();
+                            return (
                               <option key={m.id} value={m.id}>
-                                {m.hoTen} ({m.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'})
+                                {isCurrent ? '⭐ ' : ''}{m.hoTen} ({m.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'}{m.doiId === team.id ? ' - Đang trong đội' : ''})
                               </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
+                            );
+                          })}
+                        </select>
+                      </div>
                     </div>
                   );
                 })
@@ -1153,15 +1161,40 @@ export const EmployeeManagementView: React.FC = () => {
                   </div>
                   <div>
                     <label className="block font-bold text-stone-700 mb-1">
-                      Tên Đội trưởng (hoặc bổ nhiệm sau)
+                      Đội trưởng phụ trách:
                     </label>
-                    <input
-                      type="text"
-                      value={newTeamData.doiTruongTen}
-                      onChange={e => setNewTeamData({ ...newTeamData, doiTruongTen: e.target.value })}
-                      placeholder="VD: Nguyễn Văn Trưởng"
-                      className="w-full p-2.5 bg-stone-50 border border-stone-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-orange-500"
-                    />
+                    <div className="flex gap-1.5">
+                      <select
+                        value={
+                          employees.find(
+                            e => e.hoTen.trim().toLowerCase() === newTeamData.doiTruongTen.trim().toLowerCase()
+                          )?.id || ''
+                        }
+                        onChange={e => {
+                          const emp = employees.find(m => m.id === e.target.value);
+                          if (emp) {
+                            setNewTeamData({ ...newTeamData, doiTruongTen: emp.hoTen });
+                          } else if (e.target.value === '') {
+                            setNewTeamData({ ...newTeamData, doiTruongTen: '' });
+                          }
+                        }}
+                        className="p-2.5 bg-stone-50 border border-stone-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-orange-500 text-xs flex-1 font-bold"
+                      >
+                        <option value="">-- Chọn nhân viên có sẵn ({employees.length}) --</option>
+                        {employees.map(e => (
+                          <option key={e.id} value={e.id}>
+                            {e.hoTen} ({e.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'})
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={newTeamData.doiTruongTen}
+                        onChange={e => setNewTeamData({ ...newTeamData, doiTruongTen: e.target.value })}
+                        placeholder="Hoặc gõ tên..."
+                        className="p-2.5 bg-stone-50 border border-stone-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-orange-500 text-xs w-36"
+                      />
+                    </div>
                   </div>
                 </div>
 

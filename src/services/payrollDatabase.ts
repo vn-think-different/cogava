@@ -391,6 +391,33 @@ export class PayrollDatabase {
   }
 
   /**
+   * Cập nhật thông tin tài khoản người dùng (Phân quyền, Đội nhóm, ...)
+   */
+  static updateUserAccount(
+    userId: string,
+    data: Partial<UserAccount>
+  ): { success: boolean; user?: UserAccount; message: string } {
+    const users = this.getUserAccounts();
+    const userIndex = users.findIndex(u => u.id === userId);
+
+    if (userIndex === -1) {
+      return { success: false, message: 'Không tìm thấy tài khoản!' };
+    }
+
+    users[userIndex] = {
+      ...users[userIndex],
+      ...data,
+    };
+    this.saveUserAccounts(users);
+
+    return {
+      success: true,
+      user: users[userIndex],
+      message: 'Đã cập nhật tài khoản thành công!',
+    };
+  }
+
+  /**
    * Thêm tài khoản người dùng mới (Dành cho Admin)
    */
   static addUserAccount(accountData: Omit<UserAccount, 'id' | 'ngayTao'>): {

@@ -8,6 +8,7 @@ interface ConfirmModalProps {
   confirmText?: string;
   cancelText?: string;
   type?: 'danger' | 'warning' | 'info';
+  itemLabel?: string;
   itemName?: string;
   itemDetail?: string;
   onConfirm: () => void;
@@ -21,12 +22,22 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   confirmText = 'Xác nhận xóa',
   cancelText = 'Hủy bỏ',
   type = 'danger',
+  itemLabel,
   itemName,
   itemDetail,
   onConfirm,
   onCancel,
 }) => {
   if (!isOpen) return null;
+
+  // Default item label based on modal purpose
+  const defaultLabel =
+    itemLabel ||
+    (type === 'danger'
+      ? 'Đối tượng thực hiện xóa:'
+      : type === 'warning'
+      ? 'Tài khoản / Đối tượng áp dụng:'
+      : 'Thông tin xác nhận:');
 
   return (
     <div
@@ -45,7 +56,9 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
             className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${
               type === 'danger'
                 ? 'bg-rose-100 text-rose-600 border border-rose-200'
-                : 'bg-amber-100 text-amber-600 border border-amber-200'
+                : type === 'warning'
+                ? 'bg-amber-100 text-amber-600 border border-amber-200'
+                : 'bg-blue-100 text-blue-600 border border-blue-200'
             }`}
           >
             {type === 'danger' ? (
@@ -73,15 +86,31 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
         {/* Item highlighted box */}
         {itemName && (
-          <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl space-y-1">
-            <div className="text-[11px] font-bold text-rose-800 uppercase tracking-wider">
-              Đối tượng sẽ bị xóa vĩnh viễn:
+          <div
+            className={`p-3 rounded-xl space-y-1 border ${
+              type === 'danger'
+                ? 'bg-rose-50/70 border-rose-200'
+                : type === 'warning'
+                ? 'bg-amber-50/70 border-amber-200'
+                : 'bg-blue-50/70 border-blue-200'
+            }`}
+          >
+            <div
+              className={`text-[11px] font-bold uppercase tracking-wider ${
+                type === 'danger'
+                  ? 'text-rose-800'
+                  : type === 'warning'
+                  ? 'text-amber-800'
+                  : 'text-blue-800'
+              }`}
+            >
+              {defaultLabel}
             </div>
             <div className="text-sm font-extrabold text-stone-900 break-words">
               {itemName}
             </div>
             {itemDetail && (
-              <div className="text-xs text-stone-500 font-medium">
+              <div className="text-xs text-stone-600 font-medium">
                 {itemDetail}
               </div>
             )}
@@ -108,7 +137,9 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
             className={`px-4 py-2 text-white font-bold rounded-xl text-xs shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
               type === 'danger'
                 ? 'bg-rose-600 hover:bg-rose-700'
-                : 'bg-amber-600 hover:bg-amber-700'
+                : type === 'warning'
+                ? 'bg-amber-600 hover:bg-amber-700'
+                : 'bg-blue-600 hover:bg-blue-700'
             }`}
           >
             {type === 'danger' ? <Trash2 className="w-4 h-4" /> : <Check className="w-4 h-4" />}

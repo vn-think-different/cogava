@@ -53,6 +53,7 @@ interface AppContextType {
   changeUserPassword: (matKhauCu: string, matKhauMoi: string) => { success: boolean; message: string };
   adminResetUserPassword: (userId: string, newPassword?: string) => { success: boolean; message: string };
   addUserAccount: (data: Omit<UserAccount, 'id' | 'ngayTao'>) => { success: boolean; message: string };
+  updateUserRoleAndTeam: (userId: string, vaiTro: VaiTroNguoiDung, doiId?: string) => { success: boolean; message: string };
   deleteUserAccount: (userId: string) => { success: boolean; message: string };
 
   // Quản lý CSDL bảng lương: CSDL Trắng để kiểm thử & nạp mẫu
@@ -427,6 +428,125 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return result;
   };
 
+  // Cập nhật phân quyền và đội nhóm cho tài khoản người dùng
+  const updateUserRoleAndTeam = (
+    userId: string,
+    vaiTro: VaiTroNguoiDung,
+    doiId?: string
+  ): { success: boolean; message: string } => {
+    if (currentUser.vaiTro !== 'ADMIN') {
+      return { success: false, message: 'Chỉ Quản trị viên mới có quyền thay đổi phân quyền và phân đội!' };
+    }
+
+    const targetUser = userAccounts.find(u => u.id === userId);
+    if (!targetUser) {
+      return { success: false, message: 'Không tìm thấy tài khoản người dùng!' };
+    }
+
+    const assignedDoiId = vaiTro === 'ADMIN' ? undefined : (doiId || undefined);
+
+    // 1. Cập nhật UserAccount
+    const updatedUser: UserAccount = {
+      ...targetUser,
+      vaiTro,
+      doiId: assignedDoiId,
+    };
+
+    PayrollDatabase.updateUserAccount(userId, updatedUser);
+    setUserAccounts(PayrollDatabase.getUserAccounts());
+
+    // 2. Nếu tài khoản liên kết với Hồ sơ Nhân viên (nhanVienId)
+    if (targetUser.nhanVienId) {
+      setEmployees(prev => {
+        const updated = prev.map(emp => {
+          if (emp.id === targetUser.nhanVienId) {
+            return {
+              ...emp,
+              ...(assignedDoiId ? { doiId: assignedDoiId } : {}),
+            };
+          }
+          return emp;
+        });
+        PayrollDatabase.saveEmployees(updated);
+        return updated;
+      });
+    }
+
+    // 3. Nếu vai trò chuyển thành DOI_TRUONG và có assignedDoiId
+    if (vaiTro === 'DOI_TRUONG' && assignedDoiId) {
+      setTeams(prev => {
+        const updated = prev.map(t => {
+          if (t.id === assignedDoiId) {
+            return {
+              ...t,
+              doiTruongTen: targetUser.tenHienThi,
+              doiTruongUserId: targetUser.id,
+            };
+          }
+          // Nếu user này trước đó là đội trưởng của đội khác, xóa khỏi đội cũ
+          if (
+            t.id !== assignedDoiId &&
+            (t.doiTruongUserId === targetUser.id ||
+              (t.doiTruongTen && t.doiTruongTen.trim().toLowerCase() === targetUser.tenHienThi.trim().toLowerCase()))
+          ) {
+            return {
+              ...t,
+              doiTruongTen: undefined,
+              doiTruongUserId: undefined,
+            };
+          }
+          return t;
+        });
+        PayrollDatabase.saveTeams(updated);
+        return updated;
+      });
+    } else if (vaiTro !== 'DOI_TRUONG') {
+      // Nếu chuyển khỏi vai trò DOI_TRUONG, gỡ bỏ chức danh đội trưởng của các đội
+      setTeams(prev => {
+        const updated = prev.map(t => {
+          if (
+            t.doiTruongUserId === targetUser.id ||
+            (t.doiTruongTen && t.doiTruongTen.trim().toLowerCase() === targetUser.tenHienThi.trim().toLowerCase())
+          ) {
+            return {
+              ...t,
+              doiTruongTen: undefined,
+              doiTruongUserId: undefined,
+            };
+          }
+          return t;
+        });
+        PayrollDatabase.saveTeams(updated);
+        return updated;
+      });
+    }
+
+    // 4. Nếu là currentUser, đồng bộ session đang đăng nhập
+    if (currentUser.id === userId) {
+      setCurrentUser(prev => ({
+        ...prev,
+        vaiTro,
+        doiId: assignedDoiId,
+      }));
+    }
+
+    const teamObj = teams.find(t => t.id === assignedDoiId);
+    const teamName = teamObj ? teamObj.tenDoi : vaiTro === 'ADMIN' ? 'Toàn công ty' : 'Chưa phân đội';
+    const roleName = vaiTro === 'ADMIN' ? 'Quản trị viên' : vaiTro === 'DOI_TRUONG' ? 'Đội trưởng' : 'Nhân viên';
+
+    createAuditLog(
+      'UserAccount',
+      userId,
+      'SUA',
+      `Thay đổi quyền/đội cho @${targetUser.username} (${targetUser.tenHienThi}) -> Vai trò: ${roleName}, Đội: ${teamName}`
+    );
+
+    return {
+      success: true,
+      message: `Đã cập nhật phân quyền "${roleName}" và đội "${teamName}" cho ${targetUser.tenHienThi}!`,
+    };
+  };
+
   // Admin xóa tài khoản
   const deleteUserAccount = (userId: string): { success: boolean; message: string } => {
     if (currentUser.vaiTro !== 'ADMIN') {
@@ -511,9 +631,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: 'Chỉ Quản trị viên mới có quyền tạo Đội mới!' };
     }
     const res = PayrollDatabase.addTeam(data);
-    if (res.success) {
+    if (res.success && res.team) {
+      const newTeamId = res.team.id;
       setTeams(PayrollDatabase.getTeams());
-      createAuditLog('DoiNhanVien', res.team?.id || 'new', 'TAO', `Tạo đội mới: "${data.tenDoi}"`);
+      createAuditLog('DoiNhanVien', newTeamId, 'TAO', `Tạo đội mới: "${data.tenDoi}"`);
+
+      // Nếu có chỉ định Đội trưởng ngay khi tạo đội (bằng tên hoặc ID)
+      if (data.doiTruongTen) {
+        const emp = employees.find(
+          e =>
+            (data.doiTruongUserId && e.id === data.doiTruongUserId) ||
+            e.hoTen.trim().toLowerCase() === data.doiTruongTen!.trim().toLowerCase()
+        );
+        if (emp) {
+          appointCaptain(newTeamId, emp.id);
+        }
+      }
     }
     return res;
   };
@@ -526,6 +659,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (res.success) {
       setTeams(PayrollDatabase.getTeams());
       createAuditLog('DoiNhanVien', id, 'SUA', `Cập nhật thông tin đội ${id}`);
+
+      // Nếu đổi đội trưởng, đồng bộ nhân viên và tài khoản mà KHÔNG gọi lại updateTeam
+      if (data.doiTruongTen) {
+        const emp = employees.find(
+          e =>
+            (data.doiTruongUserId && e.id === data.doiTruongUserId) ||
+            e.hoTen.trim().toLowerCase() === data.doiTruongTen!.trim().toLowerCase()
+        );
+        if (emp) {
+          setEmployees(prev => {
+            const updated = prev.map(e => (e.id === emp.id ? { ...e, doiId: id } : e));
+            PayrollDatabase.saveEmployees(updated);
+            return updated;
+          });
+          const userAcc = userAccounts.find(u => u.nhanVienId === emp.id || u.username === emp.soDienThoai);
+          if (userAcc) {
+            setUserAccounts(prev => {
+              const updated = prev.map(u =>
+                u.id === userAcc.id ? { ...u, vaiTro: 'DOI_TRUONG' as const, doiId: id } : u
+              );
+              PayrollDatabase.saveUserAccounts(updated);
+              return updated;
+            });
+          }
+        }
+      }
     }
     return res;
   };
@@ -746,20 +905,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!emp) return { success: false, message: 'Không tìm thấy nhân viên!' };
 
     // Tìm tài khoản người dùng của nhân viên
-    let userAcc = userAccounts.find(u => u.nhanVienId === empId);
+    const userAcc = userAccounts.find(u => u.nhanVienId === empId || u.username === emp.soDienThoai);
 
-    // Cập nhật đội
-    const updatedTeam: DoiNhanVien = {
-      ...team,
-      doiTruongUserId: userAcc?.id || undefined,
+    // 1. Cập nhật đội trong CSDL & State
+    PayrollDatabase.updateTeam(teamId, {
+      doiTruongUserId: userAcc?.id || emp.id,
       doiTruongTen: emp.hoTen,
-    };
-    updateTeam(teamId, updatedTeam);
+    });
+    setTeams(PayrollDatabase.getTeams());
 
-    // Nếu có tài khoản, nâng quyền lên DOI_TRUONG
+    // 2. Gán nhân viên vào đội này
+    setEmployees(prev => {
+      const updated = prev.map(e => (e.id === empId ? { ...e, doiId: teamId } : e));
+      PayrollDatabase.saveEmployees(updated);
+      return updated;
+    });
+
+    // 3. Nếu có tài khoản, nâng quyền lên DOI_TRUONG
     if (userAcc) {
       setUserAccounts(prev => {
-        const updated = prev.map(u => (u.id === userAcc!.id ? { ...u, vaiTro: 'DOI_TRUONG' as const, doiId: teamId } : u));
+        const updated = prev.map(u =>
+          u.id === userAcc.id ? { ...u, vaiTro: 'DOI_TRUONG' as const, doiId: teamId } : u
+        );
         PayrollDatabase.saveUserAccounts(updated);
         return updated;
       });
@@ -1014,6 +1181,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     changeUserPassword,
     adminResetUserPassword,
     addUserAccount,
+    updateUserRoleAndTeam,
     deleteUserAccount,
     clearAttendanceToBlank,
     loadSampleExcelAttendance,

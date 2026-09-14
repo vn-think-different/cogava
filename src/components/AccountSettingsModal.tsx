@@ -46,6 +46,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
     changeUserPassword,
     adminResetUserPassword,
     addUserAccount,
+    updateUserRoleAndTeam,
     deleteUserAccount,
     clearAttendanceToBlank,
     loadSampleExcelAttendance,
@@ -606,7 +607,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                     </thead>
                     <tbody className="divide-y divide-stone-100">
                       {userAccounts.map(account => {
-                        const assignedTeam = teams.find(t => t.id === account.doiId);
+                        const isMasterAdmin = account.username === 'admin' || account.username === 'thach';
                         return (
                           <tr key={account.id} className="hover:bg-stone-50/70 transition-colors">
                             <td className="py-2.5 px-3 flex items-center gap-2.5">
@@ -622,7 +623,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                                 </span>
                                 {account.nhanVienId && (
                                   <span className="text-[10px] text-stone-400">
-                                    NV: {account.nhanVienId}
+                                    Mã NV: {account.nhanVienId}
                                   </span>
                                 )}
                               </div>
@@ -631,26 +632,59 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                               @{account.username}
                             </td>
                             <td className="py-2.5 px-3">
-                              <span
-                                className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
-                                  account.vaiTro === 'ADMIN'
-                                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                                    : account.vaiTro === 'DOI_TRUONG'
-                                    ? 'bg-blue-100 text-blue-900 border border-blue-300'
-                                    : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                                }`}
-                              >
-                                {account.vaiTro === 'ADMIN'
-                                  ? 'Quản trị'
-                                  : account.vaiTro === 'DOI_TRUONG'
-                                  ? 'Đội trưởng'
-                                  : 'Nhân viên'}
-                              </span>
+                              {isMasterAdmin ? (
+                                <span className="inline-block px-2.5 py-1 rounded-lg text-[11px] font-extrabold uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                                  Quản trị (Gốc)
+                                </span>
+                              ) : (
+                                <select
+                                  value={account.vaiTro}
+                                  onChange={(e) => {
+                                    const newRole = e.target.value as VaiTroNguoiDung;
+                                    const res = updateUserRoleAndTeam(
+                                      account.id,
+                                      newRole,
+                                      newRole === 'ADMIN' ? undefined : (account.doiId || teams[0]?.id)
+                                    );
+                                    setStatusMsg({
+                                      type: res.success ? 'success' : 'error',
+                                      message: res.message,
+                                    });
+                                  }}
+                                  className="px-2 py-1 bg-white border border-stone-300 rounded-lg text-xs font-bold text-stone-800 hover:border-orange-400 focus:ring-1 focus:ring-orange-500 focus:border-orange-500 cursor-pointer"
+                                >
+                                  <option value="NHAN_VIEN">Nhân viên</option>
+                                  <option value="DOI_TRUONG">Đội trưởng</option>
+                                  <option value="ADMIN">Quản trị viên</option>
+                                </select>
+                              )}
                             </td>
                             <td className="py-2.5 px-3">
-                              <span className="text-xs font-semibold text-stone-700">
-                                {assignedTeam ? assignedTeam.tenDoi : account.vaiTro === 'ADMIN' ? 'Toàn công ty' : 'Đội 1 - Dĩ An'}
-                              </span>
+                              {account.vaiTro === 'ADMIN' ? (
+                                <span className="inline-block px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-stone-100 text-stone-600 border border-stone-200">
+                                  Toàn công ty
+                                </span>
+                              ) : (
+                                <select
+                                  value={account.doiId || ''}
+                                  onChange={(e) => {
+                                    const newDoiId = e.target.value;
+                                    const res = updateUserRoleAndTeam(account.id, account.vaiTro, newDoiId);
+                                    setStatusMsg({
+                                      type: res.success ? 'success' : 'error',
+                                      message: res.message,
+                                    });
+                                  }}
+                                  className="px-2 py-1 bg-white border border-stone-300 rounded-lg text-xs font-medium text-stone-800 hover:border-orange-400 focus:ring-1 focus:ring-orange-500 focus:border-orange-500 cursor-pointer max-w-[160px]"
+                                >
+                                  <option value="">-- Chưa phân đội --</option>
+                                  {teams.map(t => (
+                                    <option key={t.id} value={t.id}>
+                                      {t.tenDoi} {t.khuVuc ? `(${t.khuVuc})` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
                             </td>
                             <td className="py-2.5 px-3 font-mono text-stone-500">
                               ••••••
@@ -660,16 +694,16 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleAdminReset(account)}
-                                  className="px-2 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg text-[11px] font-semibold border border-stone-200 cursor-pointer"
+                                  className="px-2 py-1 bg-stone-100 hover:bg-amber-100 hover:text-amber-900 text-stone-700 rounded-lg text-[11px] font-semibold border border-stone-200 cursor-pointer transition-colors"
                                   title="Đặt lại mật khẩu về 123456"
                                 >
                                   Đặt lại MK
                                 </button>
-                                {account.id !== currentUser.id && account.username !== 'admin' && account.username !== 'thach' && (
+                                {account.id !== currentUser.id && !isMasterAdmin && (
                                   <button
                                     type="button"
                                     onClick={() => setDeletingAccount(account)}
-                                    className="p-1 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
+                                    className="p-1 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors"
                                     title="Xóa tài khoản"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
@@ -744,7 +778,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                       >
                         {teams.map(t => (
                           <option key={t.id} value={t.id}>
-                            {t.tenDoi} ({t.diaBan})
+                            {t.tenDoi} {t.khuVuc ? `(${t.khuVuc})` : ''}
                           </option>
                         ))}
                       </select>
@@ -904,6 +938,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
         title="Đặt lại mật khẩu mặc định"
         message="Mật khẩu của tài khoản sẽ được đưa về mật khẩu ban đầu là: 123456"
         itemName={resettingAccount ? `@${resettingAccount.username} (${resettingAccount.tenHienThi})` : ''}
+        itemLabel="Tài khoản được đặt lại mật khẩu:"
+        itemDetail="Mật khẩu mới sau khi đặt lại: 123456"
         confirmText="Đặt lại mật khẩu"
         cancelText="Hủy"
         type="warning"
@@ -915,7 +951,8 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
         isOpen={showClearBlankConfirm}
         title="CẢNH BÁO: Xóa sạch dữ liệu chấm công"
         message="Toàn bộ các ngày chấm công trong CSDL sẽ được xóa về 0 bản ghi (CSDL Trắng hoàn toàn) để bạn tiến hành kiểm thử nhập liệu thực tế từ đầu."
-        itemName={`Xóa ${attendanceRecords.length} ngày chấm công`}
+        itemName={`Xóa toàn bộ ${attendanceRecords.length} ngày chấm công`}
+        itemLabel="Dữ liệu sẽ bị xóa hoàn toàn:"
         confirmText="Xác nhận xóa sạch"
         cancelText="Hủy"
         type="danger"
@@ -928,6 +965,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
         title="Nạp dữ liệu chấm công mẫu từ Excel"
         message="Hệ thống sẽ nạp lại 28 bản ghi chấm công thực tế từ file Excel mẫu COGAVA để bạn đối chiếu kiểm tra công thức."
         itemName="28 ngày chấm công mẫu (Tháng 8 & Tháng 9/2026)"
+        itemLabel="Dữ liệu mẫu nạp vào CSDL:"
         confirmText="Nạp dữ liệu mẫu"
         cancelText="Hủy"
         type="info"
