@@ -638,7 +638,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Nếu có chỉ định Đội trưởng ngay khi tạo đội (bằng tên hoặc ID)
       if (data.doiTruongTen) {
-        const emp = employees.find(
+        const allEmps = PayrollDatabase.getEmployees();
+        const emp = allEmps.find(
           e =>
             (data.doiTruongUserId && e.id === data.doiTruongUserId) ||
             e.hoTen.trim().toLowerCase() === data.doiTruongTen!.trim().toLowerCase()
@@ -898,14 +899,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const appointCaptain = (teamId: string, empId: string): { success: boolean; message: string } => {
-    const team = teams.find(t => t.id === teamId);
-    const emp = employees.find(e => e.id === empId);
+    const allTeams = PayrollDatabase.getTeams();
+    const allEmployees = PayrollDatabase.getEmployees();
+    const allUsers = PayrollDatabase.getUserAccounts();
+
+    const team = allTeams.find(t => t.id === teamId) || teams.find(t => t.id === teamId);
+    const emp = allEmployees.find(e => e.id === empId) || employees.find(e => e.id === empId);
 
     if (!team) return { success: false, message: 'Không tìm thấy đội!' };
     if (!emp) return { success: false, message: 'Không tìm thấy nhân viên!' };
 
     // Tìm tài khoản người dùng của nhân viên
-    const userAcc = userAccounts.find(u => u.nhanVienId === empId || u.username === emp.soDienThoai);
+    const userAcc = allUsers.find(u => u.nhanVienId === empId || u.username === emp.soDienThoai);
 
     // 1. Cập nhật đội trong CSDL & State
     PayrollDatabase.updateTeam(teamId, {
@@ -915,21 +920,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTeams(PayrollDatabase.getTeams());
 
     // 2. Gán nhân viên vào đội này
-    setEmployees(prev => {
-      const updated = prev.map(e => (e.id === empId ? { ...e, doiId: teamId } : e));
-      PayrollDatabase.saveEmployees(updated);
-      return updated;
-    });
+    const updatedEmployees = PayrollDatabase.getEmployees().map(e =>
+      e.id === empId ? { ...e, doiId: teamId } : e
+    );
+    PayrollDatabase.saveEmployees(updatedEmployees);
+    setEmployees(updatedEmployees);
 
     // 3. Nếu có tài khoản, nâng quyền lên DOI_TRUONG
     if (userAcc) {
-      setUserAccounts(prev => {
-        const updated = prev.map(u =>
-          u.id === userAcc.id ? { ...u, vaiTro: 'DOI_TRUONG' as const, doiId: teamId } : u
-        );
-        PayrollDatabase.saveUserAccounts(updated);
-        return updated;
-      });
+      const updatedUsers = PayrollDatabase.getUserAccounts().map(u =>
+        u.id === userAcc.id ? { ...u, vaiTro: 'DOI_TRUONG' as const, doiId: teamId } : u
+      );
+      PayrollDatabase.saveUserAccounts(updatedUsers);
+      setUserAccounts(updatedUsers);
     }
 
     createAuditLog(

@@ -45,8 +45,30 @@ export const MonthlyPayrollView: React.FC = () => {
     isMobileView,
   } = useApp();
 
-  // Selected Month (YYYY-MM)
-  const [selectedMonth, setSelectedMonth] = useState<string>('2026-08');
+  // Available months extracted from attendance records
+  const availableMonths = useMemo(() => {
+    const monthSet = new Set<string>();
+    attendanceRecords.forEach(r => {
+      if (r.ngay && r.ngay.length >= 7) {
+        monthSet.add(r.ngay.substring(0, 7));
+      }
+    });
+    // Ensure 2026-09 and 2026-08 are present
+    monthSet.add('2026-09');
+    monthSet.add('2026-08');
+    return Array.from(monthSet).sort().reverse();
+  }, [attendanceRecords]);
+
+  // Selected Month (YYYY-MM) - Defaults to the latest month with data or 2026-09
+  const defaultInitialMonth = useMemo(() => {
+    if (attendanceRecords.length > 0) {
+      const sorted = [...attendanceRecords].sort((a, b) => b.ngay.localeCompare(a.ngay));
+      return sorted[0].ngay.substring(0, 7);
+    }
+    return '2026-09';
+  }, [attendanceRecords]);
+
+  const [selectedMonth, setSelectedMonth] = useState<string>(defaultInitialMonth);
   const [selectedTeamFilter, setSelectedTeamFilter] = useState<string>('ALL');
   const [activeSubTab, setActiveSubTab] = useState<'summary' | 'matrix'>('summary');
   
@@ -63,18 +85,6 @@ export const MonthlyPayrollView: React.FC = () => {
   const isEmployee = currentUser.vaiTro === 'NHAN_VIEN';
   const isDoiTruong = currentUser.vaiTro === 'DOI_TRUONG';
   const currentTeam = teams.find(t => t.id === (currentUser.doiId || 'doi-1'));
-
-  // Available months extracted from attendance records
-  const availableMonths = useMemo(() => {
-    const monthSet = new Set<string>();
-    attendanceRecords.forEach(r => {
-      monthSet.add(r.ngay.substring(0, 7));
-    });
-    // Ensure 2026-08 and 2026-09 are present
-    monthSet.add('2026-08');
-    monthSet.add('2026-09');
-    return Array.from(monthSet).sort().reverse();
-  }, [attendanceRecords]);
 
   // Records for current selected month (with team-based filtering for DOI_TRUONG or ADMIN)
   const monthRecords = useMemo(() => {
@@ -152,7 +162,10 @@ export const MonthlyPayrollView: React.FC = () => {
       let totalSalary = 0;
 
       monthRecords.forEach(rec => {
-        const detail = rec.chiTiet.find(c => c.nhanVienId === emp.id);
+        const detail = rec.chiTiet.find(
+          c => c.nhanVienId === emp.id ||
+          (c.hoTen && emp.hoTen && c.hoTen.trim().toLowerCase() === emp.hoTen.trim().toLowerCase())
+        );
         if (detail && detail.coMat) {
           daysCount += 1;
           totalSalary += detail.luongNhanDuoc;
@@ -271,22 +284,56 @@ export const MonthlyPayrollView: React.FC = () => {
               <Calendar className="w-5 h-5 text-orange-600" />
               <span className="text-sm font-bold text-stone-800">Kỳ lương:</span>
             </div>
-            <select
-              id="select-payroll-month"
-              aria-label="Chọn tháng bảng lương"
-              value={selectedMonth}
-              onChange={e => setSelectedMonth(e.target.value)}
-              className="text-base font-extrabold text-stone-900 bg-stone-50 border border-stone-200 rounded-xl px-4 py-2 focus:outline-hidden focus:ring-2 focus:ring-orange-500 cursor-pointer"
-            >
-              {availableMonths.map(m => {
+
+            {/* Quick Month Selector Buttons */}
+            <div className="flex flex-wrap items-center gap-1.5 bg-stone-100 p-1 rounded-xl">
+              {availableMonths.slice(0, 3).map(m => {
                 const [y, mo] = m.split('-');
+                const countInMonth = attendanceRecords.filter(r => r.ngay.startsWith(m)).length;
+                const isSelected = selectedMonth === m;
+
                 return (
-                  <option key={m} value={m}>
-                    Tháng {mo} / Năm {y}
-                  </option>
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setSelectedMonth(m)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      isSelected
+                        ? 'bg-orange-500 text-white shadow-xs'
+                        : 'text-stone-700 hover:bg-white hover:text-stone-900'
+                    }`}
+                  >
+                    <span>Tháng {mo}/{y}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                        isSelected ? 'bg-orange-600 text-white' : 'bg-stone-200 text-stone-700'
+                      }`}
+                    >
+                      {countInMonth} ngày
+                    </span>
+                  </button>
                 );
               })}
-            </select>
+            </div>
+
+            {availableMonths.length > 3 && (
+              <select
+                id="select-payroll-month"
+                aria-label="Chọn tháng bảng lương khác"
+                value={selectedMonth}
+                onChange={e => setSelectedMonth(e.target.value)}
+                className="text-xs font-extrabold text-stone-900 bg-stone-50 border border-stone-200 rounded-xl px-3 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-orange-500 cursor-pointer"
+              >
+                {availableMonths.map(m => {
+                  const [y, mo] = m.split('-');
+                  return (
+                    <option key={m} value={m}>
+                      Tháng {mo} / Năm {y}
+                    </option>
+                  );
+                })}
+              </select>
+            )}
 
             {/* Team Filter for Admin */}
             {currentUser.vaiTro === 'ADMIN' && (

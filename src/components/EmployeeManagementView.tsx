@@ -59,6 +59,41 @@ export const EmployeeManagementView: React.FC = () => {
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [viewingCccdEmp, setViewingCccdEmp] = useState<NhanVien | null>(null);
 
+  // Assign Employees to Team Modal State
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [targetTeamForAssign, setTargetTeamForAssign] = useState<DoiNhanVien | null>(null);
+  const [selectedEmpIdsForAssign, setSelectedEmpIdsForAssign] = useState<string[]>([]);
+  const [assignSearchTerm, setAssignSearchTerm] = useState('');
+
+  const openAssignModal = (team: DoiNhanVien) => {
+    setTargetTeamForAssign(team);
+    const currentMemberIds = employees.filter(e => e.doiId === team.id).map(e => e.id);
+    setSelectedEmpIdsForAssign(currentMemberIds);
+    setAssignSearchTerm('');
+    setIsAssignModalOpen(true);
+  };
+
+  const handleSaveTeamAssignment = () => {
+    if (!targetTeamForAssign) return;
+    const teamId = targetTeamForAssign.id;
+    
+    // 1. Gán những người được chọn vào đội
+    selectedEmpIdsForAssign.forEach(empId => {
+      assignEmployeeToTeam(empId, teamId);
+    });
+    
+    // 2. Những người trước đây thuộc đội này nhưng nay bị bỏ tích chọn -> chuyển về không có đội
+    const previousMembers = employees.filter(e => e.doiId === teamId);
+    previousMembers.forEach(emp => {
+      if (!selectedEmpIdsForAssign.includes(emp.id)) {
+        assignEmployeeToTeam(emp.id, '');
+      }
+    });
+
+    showToast(`Đã cập nhật danh sách thành viên cho đội "${targetTeamForAssign.tenDoi}" thành công!`, 'success');
+    setIsAssignModalOpen(false);
+  };
+
   // Confirm Modals state
   const [deletingEmp, setDeletingEmp] = useState<NhanVien | null>(null);
   const [deletingTeam, setDeletingTeam] = useState<DoiNhanVien | null>(null);
@@ -319,6 +354,20 @@ export const EmployeeManagementView: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            {isAdmin && selectedTeamFilter !== 'ALL' && (
+              <button
+                onClick={() => {
+                  const targetTeam = teams.find(t => t.id === selectedTeamFilter);
+                  if (targetTeam) openAssignModal(targetTeam);
+                }}
+                className="px-3.5 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-800 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-2 border border-sky-200 cursor-pointer"
+                title="Gán nhân viên có sẵn vào đội này"
+              >
+                <Users2 className="w-4 h-4 text-sky-600" />
+                <span>Gán người vào đội</span>
+              </button>
+            )}
+
             {isAdmin && (
               <button
                 onClick={() => {
@@ -484,19 +533,41 @@ export const EmployeeManagementView: React.FC = () => {
       {teams.length > 0 && filteredEmployees.length === 0 && (
         <div className="bg-white rounded-2xl p-8 text-center border border-dashed border-stone-300 space-y-3">
           <Users className="w-10 h-10 text-stone-400 mx-auto" />
-          <h3 className="text-base font-bold text-stone-900">Chưa có nhân viên nào</h3>
+          <h3 className="text-base font-bold text-stone-900">
+            {selectedTeamFilter !== 'ALL'
+              ? `Đội "${teams.find(t => t.id === selectedTeamFilter)?.tenDoi}" chưa có nhân viên nào`
+              : 'Chưa có nhân viên nào'}
+          </h3>
           <p className="text-xs text-stone-500 max-w-md mx-auto">
-            Bấm <strong>Thêm nhân viên mới</strong> để thêm thành viên vào đội, phân vai trò Lương chính / Lương phụ và cấp tài khoản.
+            {selectedTeamFilter !== 'ALL'
+              ? 'Bạn có thể gán nhanh các nhân viên đã tạo sẵn trong hệ thống vào đội này, hoặc bấm tạo thêm nhân viên mới.'
+              : 'Bấm Thêm nhân viên mới để thêm thành viên vào đội, phân vai trò Lương chính / Lương phụ và cấp tài khoản.'}
           </p>
-          {canManageMembers && (
-            <button
-              onClick={openAddModal}
-              className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer inline-flex items-center gap-1.5"
-            >
-              <UserPlus className="w-4 h-4" />
-              Thêm nhân viên
-            </button>
-          )}
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+            {selectedTeamFilter !== 'ALL' && isAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  const targetTeam = teams.find(t => t.id === selectedTeamFilter);
+                  if (targetTeam) openAssignModal(targetTeam);
+                }}
+                className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <Users2 className="w-4 h-4" />
+                Gán nhân viên có sẵn vào đội này
+              </button>
+            )}
+            {canManageMembers && (
+              <button
+                type="button"
+                onClick={openAddModal}
+                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <UserPlus className="w-4 h-4" />
+                Tạo nhân viên mới
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1073,6 +1144,18 @@ export const EmployeeManagementView: React.FC = () => {
 
                         <div className="flex items-center gap-1">
                           <button
+                            type="button"
+                            onClick={() => {
+                              setIsTeamModalOpen(false);
+                              openAssignModal(team);
+                            }}
+                            className="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-800 rounded-lg font-bold text-xs flex items-center gap-1 border border-sky-200 cursor-pointer"
+                            title="Gán nhân viên vào đội này"
+                          >
+                            <Users2 className="w-3.5 h-3.5 text-sky-600" />
+                            <span>Gán thành viên ({teamMembers.length})</span>
+                          </button>
+                          <button
                             onClick={() => {
                               setEditingTeamId(team.id);
                               setNewTeamData({
@@ -1311,6 +1394,283 @@ export const EmployeeManagementView: React.FC = () => {
         onConfirm={handleConfirmDeleteTeam}
         onCancel={() => setDeletingTeam(null)}
       />
+
+      {/* Assign Employees to Team Modal */}
+      {isAssignModalOpen && targetTeamForAssign && (
+        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-stone-200 space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-sky-100 text-sky-700 rounded-xl">
+                  <Users2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-stone-900">
+                    Gán nhân viên vào: <span className="text-orange-600">{targetTeamForAssign.tenDoi}</span>
+                  </h2>
+                  <p className="text-xs text-stone-500">
+                    Tích chọn những nhân viên bạn muốn đưa vào đội này ({selectedEmpIdsForAssign.length} người được chọn)
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAssignModalOpen(false)}
+                className="text-stone-400 hover:text-stone-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search & Quick Select */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 flex-shrink-0">
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={assignSearchTerm}
+                  onChange={e => setAssignSearchTerm(e.target.value)}
+                  placeholder="Tìm nhân viên..."
+                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const availableIds = employees
+                      .filter(e => !e.doiId || e.doiId === targetTeamForAssign.id)
+                      .map(e => e.id);
+                    setSelectedEmpIdsForAssign(availableIds);
+                  }}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 cursor-pointer"
+                >
+                  Chọn tất cả khả dụng
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedEmpIdsForAssign([])}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 cursor-pointer"
+                >
+                  Bỏ chọn tất cả
+                </button>
+              </div>
+            </div>
+
+            {/* Explanatory banner */}
+            <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl text-xs text-sky-900 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-sky-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <span>
+                  Mỗi nhân viên chỉ thuộc 1 đội nhóm duy nhất. Để thêm người đang ở đội khác vào <strong>{targetTeamForAssign.tenDoi}</strong>, hãy bấm nút <strong>Chuyển sang đội này</strong> hoặc <strong>Gỡ khỏi đội cũ</strong>.
+                </span>
+              </div>
+            </div>
+
+            {/* Employee List with Checkboxes and Team Separation */}
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1 min-h-[280px]">
+              {(() => {
+                const searchFiltered = employees.filter(emp =>
+                  emp.hoTen.toLowerCase().includes(assignSearchTerm.toLowerCase()) ||
+                  (emp.sdt && emp.sdt.includes(assignSearchTerm))
+                );
+
+                const availableEmployees = searchFiltered.filter(
+                  emp => !emp.doiId || emp.doiId === targetTeamForAssign.id
+                );
+
+                const otherTeamEmployees = searchFiltered.filter(
+                  emp => emp.doiId && emp.doiId !== targetTeamForAssign.id
+                );
+
+                return (
+                  <>
+                    {/* SECTION 1: Available or Current Team Members */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-stone-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          Nhân viên khả dụng & Đang ở đội ({availableEmployees.length})
+                        </span>
+                      </div>
+
+                      {availableEmployees.length === 0 ? (
+                        <p className="text-xs text-stone-400 italic p-3 bg-stone-50 rounded-xl">
+                          Không có nhân viên khả dụng nào phù hợp tìm kiếm.
+                        </p>
+                      ) : (
+                        availableEmployees.map(emp => {
+                          const isChecked = selectedEmpIdsForAssign.includes(emp.id);
+                          const isCurrentTeam = emp.doiId === targetTeamForAssign.id;
+
+                          return (
+                            <div
+                              key={emp.id}
+                              onClick={() => {
+                                if (isChecked) {
+                                  setSelectedEmpIdsForAssign(prev => prev.filter(id => id !== emp.id));
+                                } else {
+                                  setSelectedEmpIdsForAssign(prev => [...prev, emp.id]);
+                                }
+                              }}
+                              className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                                isChecked
+                                  ? 'bg-sky-50/90 border-sky-300 shadow-2xs'
+                                  : 'bg-white border-stone-200 hover:bg-stone-50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className={`w-5 h-5 rounded-md flex items-center justify-center border transition-colors ${
+                                    isChecked
+                                      ? 'bg-sky-600 border-sky-600 text-white'
+                                      : 'border-stone-300 bg-white text-transparent'
+                                  }`}
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                </div>
+
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-stone-900">{emp.hoTen}</span>
+                                    <span
+                                      className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
+                                        emp.vaiTro === 'CHINH'
+                                          ? 'bg-orange-100 text-orange-800'
+                                          : 'bg-amber-100 text-amber-800'
+                                      }`}
+                                    >
+                                      {emp.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'}
+                                    </span>
+                                  </div>
+                                  <span className="text-[11px] text-stone-500">
+                                    {emp.sdt ? `SĐT: ${emp.sdt}` : 'Chưa có SĐT'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="text-right">
+                                {isCurrentTeam ? (
+                                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                    Đang ở đội này
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                                    Chưa có đội
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* SECTION 2: Employees belonging to other teams */}
+                    {otherTeamEmployees.length > 0 && (
+                      <div className="space-y-2 pt-3 border-t border-stone-200">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-stone-600 uppercase tracking-wider flex items-center gap-1.5">
+                            <Lock className="w-3.5 h-3.5 text-amber-600" />
+                            Đang thuộc đội khác ({otherTeamEmployees.length}) - Cần gỡ khỏi đội cũ hoặc Chuyển đội
+                          </span>
+                        </div>
+
+                        {otherTeamEmployees.map(emp => {
+                          const currentEmpTeam = teams.find(t => t.id === emp.doiId);
+
+                          return (
+                            <div
+                              key={emp.id}
+                              className="p-3 rounded-xl border border-stone-200 bg-stone-50/70 flex items-center justify-between gap-3 opacity-90"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="w-5 h-5 rounded-md flex items-center justify-center border border-stone-300 bg-stone-200 text-stone-400">
+                                  <Lock className="w-3 h-3" />
+                                </div>
+
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-stone-700">{emp.hoTen}</span>
+                                    <span
+                                      className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
+                                        emp.vaiTro === 'CHINH'
+                                          ? 'bg-orange-50 text-orange-700 border border-orange-200'
+                                          : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                      }`}
+                                    >
+                                      {emp.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'}
+                                    </span>
+                                  </div>
+                                  <span className="text-[11px] text-stone-500">
+                                    Đang thuộc đội: <strong className="text-stone-800">{currentEmpTeam?.tenDoi || 'Đội khác'}</strong>
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    assignEmployeeToTeam(emp.id, '');
+                                    showToast(`Đã gỡ "${emp.hoTen}" khỏi đội "${currentEmpTeam?.tenDoi}"!`, 'success');
+                                  }}
+                                  className="px-2 py-1 bg-white hover:bg-stone-100 text-stone-600 text-[11px] font-bold rounded-lg border border-stone-300 cursor-pointer"
+                                  title="Gỡ khỏi đội hiện tại về trạng thái chưa phân đội"
+                                >
+                                  Gỡ khỏi đội cũ
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    assignEmployeeToTeam(emp.id, targetTeamForAssign.id);
+                                    if (!selectedEmpIdsForAssign.includes(emp.id)) {
+                                      setSelectedEmpIdsForAssign(prev => [...prev, emp.id]);
+                                    }
+                                    showToast(`Đã chuyển "${emp.hoTen}" sang đội "${targetTeamForAssign.tenDoi}"!`, 'success');
+                                  }}
+                                  className="px-2.5 py-1 bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-2xs"
+                                >
+                                  Chuyển sang đội này
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="pt-3 border-t border-stone-100 flex items-center justify-between flex-shrink-0">
+              <span className="text-xs font-semibold text-stone-600">
+                Đã chọn: <strong className="text-sky-700">{selectedEmpIdsForAssign.length}</strong> nhân viên
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAssignModalOpen(false)}
+                  className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveTeamAssignment}
+                  className="px-5 py-2 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Users2 className="w-4 h-4" />
+                  Lưu phân công vào đội
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

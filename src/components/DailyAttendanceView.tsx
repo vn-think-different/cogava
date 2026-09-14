@@ -16,6 +16,7 @@ import {
   HelpCircle,
   Clock,
   Sparkles,
+  Users,
   Users2,
   CheckSquare,
   Square,
@@ -37,6 +38,7 @@ export const DailyAttendanceView: React.FC = () => {
     deleteDailyAttendance,
     currentUser,
     isMobileView,
+    setActiveTab,
   } = useApp();
 
   // Current selected date (Default to 2026-09-13 or today)
@@ -94,8 +96,8 @@ export const DailyAttendanceView: React.FC = () => {
   const isEmployee = currentUser.vaiTro === 'NHAN_VIEN';
 
   // Quy định phân quyền:
-  // - Admin: Toàn quyền chấm công, chỉnh sửa, xóa bản ghi chấm công.
-  // - Đội trưởng: Được chấm công cho đội mình khi ngày này CHƯA có bản ghi (!existingRecord && !isLocked). Sau khi đã chấm công, KHÔNG được quyền sửa hoặc xóa.
+  // - Admin: Toàn quyền chấm công, xem, sửa, điều chỉnh và xóa bảng chấm công.
+  // - Đội trưởng: Mỗi đội chỉ chấm công 1 lần duy nhất trong ngày. Đội trưởng chỉ được chấm công khi CHƯA có bản ghi (!existingRecord && !isLocked). Sau khi đã chấm công, Đội trưởng chỉ được xem, KHÔNG được quyền sửa đổi.
   // - Nhân viên: Chế độ chỉ đọc.
   const canEdit = isAdmin ? true : (isDoiTruong ? (!existingRecord && !isLocked) : false);
   const canDelete = isAdmin && !!existingRecord;
@@ -421,14 +423,20 @@ export const DailyAttendanceView: React.FC = () => {
         </div>
 
         {/* Captain Attendance status banner */}
-        {isDoiTruong && existingRecord && (
+        {isDoiTruong && (
           <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-950 flex items-start gap-2">
             <CheckCircle2 className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
             <div>
-              <span className="font-bold">Đội trưởng đã hoàn thành chấm công ngày {formatDateVN(selectedDate)}.</span>
-              <p className="mt-0.5 text-[11px] text-blue-800">
-                Theo quy định phân quyền, sau khi đã chấm công, Đội trưởng không được quyền sửa hoặc xóa. Chỉ Quản trị viên mới có quyền điều chỉnh hoặc xóa bảng chấm công đã lưu.
-              </p>
+              <span className="font-bold">
+                {existingRecord
+                  ? `Đội trưởng đã hoàn thành chấm công ngày ${formatDateVN(selectedDate)}.`
+                  : `Đội trưởng hãy tích chọn thành viên đi làm và nhập sản lượng bắt gà hôm nay để lưu chấm công (Mỗi ngày chấm công 1 lần duy nhất).`}
+              </span>
+              {existingRecord && (
+                <p className="mt-0.5 text-[11px] text-blue-800">
+                  Theo quy định phân quyền: Sau khi đã lưu chấm công, Đội trưởng ở chế độ chỉ đọc. Chỉ Quản trị viên mới có quyền điều chỉnh hoặc xóa bảng chấm công đã lưu.
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -623,90 +631,113 @@ export const DailyAttendanceView: React.FC = () => {
               )}
             </div>
 
-            {/* Employee Cards - Large touch targets for phone screens */}
-            <div className="space-y-2.5">
-              {activeEmployees.map(emp => {
-                const isSelected = selectedEmpIds.includes(emp.id);
-                const isChinh = emp.vaiTro === 'CHINH';
-                const empDetail = calculationPreview.chiTietLuong.find(c => c.nhanVienId === emp.id);
-                const wage = empDetail?.luongNhanDuoc || 0;
-
-                return (
+            {/* Empty State when team has 0 employees */}
+            {activeEmployees.length === 0 ? (
+              <div className="p-8 text-center bg-stone-50 rounded-2xl border border-dashed border-stone-300 space-y-3">
+                <Users className="w-10 h-10 text-stone-400 mx-auto" />
+                <h3 className="text-sm font-bold text-stone-800">
+                  Đội {currentTeam?.tenDoi || ''} hiện chưa có nhân viên nào
+                </h3>
+                <p className="text-xs text-stone-500 max-w-sm mx-auto">
+                  Để chấm công cho đội này, vui lòng gán nhân viên vào đội trong phần Quản lý Nhân sự.
+                </p>
+                {isAdmin && (
                   <button
                     type="button"
-                    key={emp.id}
-                    id={`emp-attendance-${emp.id}`}
-                    disabled={!canEdit}
-                    onClick={() => toggleEmployee(emp.id)}
-                    className={`w-full text-left p-3.5 rounded-xl border transition-all flex items-center justify-between cursor-pointer min-h-[56px] ${
-                      isSelected
-                        ? isChinh
-                          ? 'bg-orange-50/70 border-orange-300 shadow-2xs'
-                          : 'bg-amber-50/70 border-amber-300 shadow-2xs'
-                        : 'bg-stone-50/60 border-stone-200 hover:bg-stone-100/60 opacity-60'
-                    }`}
+                    onClick={() => setActiveTab('NHAN_SU')}
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer inline-flex items-center gap-1.5"
                   >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
-                          isSelected
-                            ? isChinh
-                              ? 'bg-orange-500 text-white'
-                              : 'bg-amber-500 text-white'
-                            : 'border-2 border-stone-300 bg-white text-transparent'
-                        }`}
-                      >
-                        <CheckCircle2 className="w-5 h-5" />
-                      </div>
-
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-base font-bold text-stone-900">
-                            {emp.hoTen}
-                          </span>
-                          <span
-                            className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${
-                              isChinh
-                                ? 'bg-orange-100 text-orange-800 border border-orange-200'
-                                : 'bg-amber-100 text-amber-800 border border-amber-200'
-                            }`}
-                          >
-                            {isChinh ? 'Lương chính' : 'Lương phụ'}
-                          </span>
-                        </div>
-                        <span className="text-xs text-stone-500">
-                          {emp.tenNganHang ? `${emp.tenNganHang} - ${emp.stkNganHang}` : 'Chưa có STK'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Projected Daily Pay */}
-                    <div className="text-right">
-                      {isSelected ? (
-                        <div>
-                          {isEmployee && emp.id !== loggedInEmployee?.id ? (
-                            <span className="text-xs font-bold text-stone-400 font-sans block py-0.5">
-                              🔒 Bảo mật
-                            </span>
-                          ) : (
-                            <span className="text-base font-extrabold text-stone-900 font-mono block">
-                              {formatVND(wage)}
-                            </span>
-                          )}
-                          <span className="text-[10px] font-medium text-emerald-700 bg-emerald-100/60 px-1.5 py-0.5 rounded">
-                            {isEmployee && emp.id === loggedInEmployee?.id ? 'Công của bạn' : 'Có mặt đi làm'}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-xs font-semibold text-stone-400">
-                          {isEmployee && emp.id === loggedInEmployee?.id ? 'Bạn nghỉ (0 đ)' : 'Vắng mặt (0 đ)'}
-                        </span>
-                      )}
-                    </div>
+                    <Users className="w-3.5 h-3.5" />
+                    Đến Quản lý Nhân sự để gán nhân viên
                   </button>
-                );
-              })}
-            </div>
+                )}
+              </div>
+            ) : (
+              /* Employee Cards - Large touch targets for phone screens */
+              <div className="space-y-2.5">
+                {activeEmployees.map(emp => {
+                  const isSelected = selectedEmpIds.includes(emp.id);
+                  const isChinh = emp.vaiTro === 'CHINH';
+                  const empDetail = calculationPreview.chiTietLuong.find(c => c.nhanVienId === emp.id);
+                  const wage = empDetail?.luongNhanDuoc || 0;
+
+                  return (
+                    <button
+                      type="button"
+                      key={emp.id}
+                      id={`emp-attendance-${emp.id}`}
+                      disabled={!canEdit}
+                      onClick={() => toggleEmployee(emp.id)}
+                      className={`w-full text-left p-3.5 rounded-xl border transition-all flex items-center justify-between cursor-pointer min-h-[56px] ${
+                        isSelected
+                          ? isChinh
+                            ? 'bg-orange-50/70 border-orange-300 shadow-2xs'
+                            : 'bg-amber-50/70 border-amber-300 shadow-2xs'
+                          : 'bg-stone-50/60 border-stone-200 hover:bg-stone-100/60 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+                            isSelected
+                              ? isChinh
+                                ? 'bg-orange-500 text-white'
+                                : 'bg-amber-500 text-white'
+                              : 'border-2 border-stone-300 bg-white text-transparent'
+                          }`}
+                        >
+                          <CheckCircle2 className="w-5 h-5" />
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-base font-bold text-stone-900">
+                              {emp.hoTen}
+                            </span>
+                            <span
+                              className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${
+                                isChinh
+                                  ? 'bg-orange-100 text-orange-800 border border-orange-200'
+                                  : 'bg-amber-100 text-amber-800 border border-amber-200'
+                              }`}
+                            >
+                              {isChinh ? 'Lương chính' : 'Lương phụ'}
+                            </span>
+                          </div>
+                          <span className="text-xs text-stone-500">
+                            {emp.tenNganHang ? `${emp.tenNganHang} - ${emp.stkNganHang}` : 'Chưa có STK'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Projected Daily Pay */}
+                      <div className="text-right">
+                        {isSelected ? (
+                          <div>
+                            {isEmployee && emp.id !== loggedInEmployee?.id ? (
+                              <span className="text-xs font-bold text-stone-400 font-sans block py-0.5">
+                                🔒 Bảo mật
+                              </span>
+                            ) : (
+                              <span className="text-base font-extrabold text-stone-900 font-mono block">
+                                {formatVND(wage)}
+                              </span>
+                            )}
+                            <span className="text-[10px] font-medium text-emerald-700 bg-emerald-100/60 px-1.5 py-0.5 rounded">
+                              {isEmployee && emp.id === loggedInEmployee?.id ? 'Công của bạn' : 'Có mặt đi làm'}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs font-semibold text-stone-400">
+                            {isEmployee && emp.id === loggedInEmployee?.id ? 'Bạn nghỉ (0 đ)' : 'Vắng mặt (0 đ)'}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Action Bar: Save & Delete */}
             <div className="pt-4 border-t border-stone-100 flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -725,13 +756,13 @@ export const DailyAttendanceView: React.FC = () => {
                 {isDoiTruong && existingRecord ? (
                   <div className="text-xs font-bold text-stone-600 bg-stone-100 px-4 py-2.5 rounded-xl border border-stone-200 flex items-center gap-2">
                     <Lock className="w-3.5 h-3.5 text-stone-500" />
-                    <span>Đã chấm công (Chỉ Quản trị viên mới được quyền xóa/sửa)</span>
+                    <span>Đã chấm công (Chỉ Quản trị viên mới được quyền sửa/xóa)</span>
                   </div>
                 ) : (
                   <button
                     type="button"
                     id="btn-save-attendance"
-                    disabled={!canEdit}
+                    disabled={!canEdit || activeEmployees.length === 0}
                     onClick={handleSave}
                     className="w-full sm:w-auto px-6 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 disabled:bg-stone-300 text-white font-bold text-sm shadow-md shadow-orange-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >

@@ -20,7 +20,7 @@ interface DashboardViewProps {
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
-  const { attendanceRecords, employees, companyInfo, currentUser } = useApp();
+  const { attendanceRecords, employees, teams, companyInfo, currentUser } = useApp();
 
   // Aggregate overall stats
   const stats = useMemo(() => {
@@ -227,36 +227,65 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
           <div className="space-y-3">
             {recentDays.map(day => {
               const percentage = Math.min(100, Math.round((day.soGaBatDuoc / maxChickenInRecent) * 100));
-              const presentCount = day.chiTiet.filter(c => c.coMat).length;
+              const presentDetails = day.chiTiet.filter(c => c.coMat);
+              const presentCount = presentDetails.length;
+              const team = teams.find(t => t.id === day.doiId) || teams[0];
 
               return (
                 <div
                   key={day.id}
                   onClick={() => onNavigate('daily')}
-                  className="p-3 rounded-xl border border-stone-100 hover:border-orange-200 hover:bg-orange-50/20 transition-all cursor-pointer space-y-2"
+                  className="p-3.5 rounded-2xl border border-stone-200 hover:border-orange-300 hover:bg-orange-50/20 transition-all cursor-pointer space-y-2.5 bg-stone-50/40"
                 >
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-stone-900 font-mono">
+                  {/* Top line: Date, Team, and Chicken Count / Wage */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-extrabold text-stone-900 font-mono text-sm">
                         {formatDateVN(day.ngay)}
                       </span>
-                      <span className="text-stone-500">({day.thuTrongTuan})</span>
-                      <span className="text-[10px] bg-stone-100 text-stone-700 px-1.5 py-0.5 rounded font-medium">
+                      <span className="text-stone-500 font-medium">({day.thuTrongTuan})</span>
+                      
+                      {/* Team badge */}
+                      <span className="inline-flex items-center gap-1 text-[11px] bg-orange-100 text-orange-800 border border-orange-200 px-2.5 py-0.5 rounded-lg font-bold">
+                        <Users className="w-3 h-3 text-orange-600" />
+                        {team ? team.tenDoi : 'Đội bắt gà'}
+                      </span>
+
+                      {/* Present count badge */}
+                      <span className="text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-lg font-bold">
                         {presentCount} người đi làm
                       </span>
                     </div>
-                    <div className="text-right">
-                      <span className="font-extrabold text-stone-900 font-mono">
+
+                    {/* Distinct Chicken count & Wage tags (No text overlap) */}
+                    <div className="flex items-center gap-2 justify-end">
+                      <span className="px-2.5 py-1 rounded-xl bg-stone-100 border border-stone-200 text-stone-900 font-black font-mono text-xs shadow-2xs">
                         {formatNumber(day.soGaBatDuoc)} con
                       </span>
-                      <span className="text-[11px] text-orange-600 font-bold ml-2 font-mono">
+                      <span className="px-2.5 py-1 rounded-xl bg-orange-500 text-white font-black font-mono text-xs shadow-xs">
                         {formatVND(day.tongLuongNgay)}
                       </span>
                     </div>
                   </div>
 
+                  {/* Member Names Chips */}
+                  {presentDetails.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px]">
+                      <span className="text-stone-500 font-semibold">Thành viên:</span>
+                      {presentDetails.map((m, idx) => (
+                        <span
+                          key={m.nhanVienId || idx}
+                          className="bg-white border border-stone-200 text-stone-800 px-2 py-0.5 rounded-md font-medium text-[11px] shadow-2xs inline-flex items-center gap-1"
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${m.vaiTro === 'CHINH' ? 'bg-orange-500' : 'bg-amber-500'}`} />
+                          {m.hoTen}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Horizontal Bar */}
-                  <div className="w-full h-2 bg-stone-100 rounded-full overflow-hidden">
+                  <div className="w-full h-1.5 bg-stone-200/80 rounded-full overflow-hidden">
                     <div
                       style={{ width: `${percentage}%` }}
                       className="h-full bg-gradient-to-r from-orange-400 to-orange-500 rounded-full transition-all duration-500"

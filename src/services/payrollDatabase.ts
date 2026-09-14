@@ -107,7 +107,7 @@ export class PayrollDatabase {
     return { success: true, message: 'Đã xóa đội thành công!' };
   }
 
-  // Lấy danh sách tài khoản (luôn bảo đảm 2 tài khoản quản trị thach và admin tồn tại và đúng pass)
+  // Lấy danh sách tài khoản (đảm bảo 2 tài khoản quản trị thach và admin tồn tại trong lần đầu khởi chạy)
   static getUserAccounts(): UserAccount[] {
     const saved = localStorage.getItem(DB_PREFIX + 'users');
     let accounts: UserAccount[] = [];
@@ -123,7 +123,7 @@ export class PayrollDatabase {
     }
 
     let modified = false;
-    // Đảm bảo tài khoản 'thach' (pass: 123456)
+    // Khởi tạo tài khoản 'thach' nếu chưa có trong CSDL (chỉ lần đầu)
     const thachIndex = accounts.findIndex(a => a.username.toLowerCase() === 'thach');
     if (thachIndex === -1) {
       accounts.unshift({
@@ -136,15 +136,9 @@ export class PayrollDatabase {
         ngayTao: '2026-01-01 08:00:00',
       });
       modified = true;
-    } else {
-      if (accounts[thachIndex].password !== '123456' || accounts[thachIndex].vaiTro !== 'ADMIN') {
-        accounts[thachIndex].password = '123456';
-        accounts[thachIndex].vaiTro = 'ADMIN';
-        modified = true;
-      }
     }
 
-    // Đảm bảo tài khoản 'admin' (pass: Langbat136@)
+    // Khởi tạo tài khoản 'admin' nếu chưa có trong CSDL (chỉ lần đầu)
     const adminIndex = accounts.findIndex(a => a.username.toLowerCase() === 'admin');
     if (adminIndex === -1) {
       accounts.push({
@@ -157,12 +151,6 @@ export class PayrollDatabase {
         ngayTao: '2026-01-01 08:00:00',
       });
       modified = true;
-    } else {
-      if (accounts[adminIndex].password !== 'Langbat136@' || accounts[adminIndex].vaiTro !== 'ADMIN') {
-        accounts[adminIndex].password = 'Langbat136@';
-        accounts[adminIndex].vaiTro = 'ADMIN';
-        modified = true;
-      }
     }
 
     if (modified || accounts.length === 0) {
