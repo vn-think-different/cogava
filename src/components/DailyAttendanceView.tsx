@@ -58,7 +58,7 @@ export const DailyAttendanceView: React.FC = () => {
 
   const currentTeam = teams.find(t => t.id === currentTeamId);
 
-  const [chickenCount, setChickenCount] = useState<string>('1200');
+  const [chickenCount, setChickenCount] = useState<string>('');
   const [customUnitPrice, setCustomUnitPrice] = useState<string>('');
   const [priceOverrideReason, setPriceOverrideReason] = useState<string>('');
   const [showOverridePrice, setShowOverridePrice] = useState<boolean>(false);
@@ -138,8 +138,8 @@ export const DailyAttendanceView: React.FC = () => {
       const present = existingRecord.chiTiet.filter(c => c.coMat).map(c => c.nhanVienId);
       setSelectedEmpIds(present);
     } else {
-      // Default: 1100 chickens and select all active employees in this team
-      setChickenCount('1100');
+      // Default: empty chicken count for easy manual entry, and select all active employees in this team
+      setChickenCount('');
       setShowOverridePrice(false);
       setCustomUnitPrice('');
       setPriceOverrideReason('');
@@ -501,7 +501,7 @@ export const DailyAttendanceView: React.FC = () => {
                     disabled={!canEdit}
                     value={chickenCount}
                     onChange={e => setChickenCount(e.target.value)}
-                    placeholder="VD: 1200"
+                    placeholder="Nhập số con gà..."
                     className="w-full text-xl font-extrabold text-stone-900 bg-stone-50 border border-stone-300 rounded-xl px-4 py-3 focus:outline-hidden focus:ring-2 focus:ring-orange-500 focus:bg-white disabled:bg-stone-100 disabled:text-stone-500 font-mono"
                   />
                   <span className="absolute right-4 top-3.5 text-xs font-bold text-stone-500 uppercase">
