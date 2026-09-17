@@ -26,6 +26,8 @@ export interface ThongTinDoanhNghiep {
 }
 
 export interface DoiNhanVien {
+  donGiaMacDinh?: number;
+  donGiaTheoNgay?: Record<string, number>;
   id: string; // e.g. 'doi-1', 'doi-2'
   tenDoi: string; // e.g. 'Đội 1 - Dĩ An'
   doiTruongUserId?: string; // id UserAccount của đội trưởng
@@ -76,6 +78,8 @@ export interface ChiTietChamCong {
 }
 
 export interface BangChamCongNgay {
+  tyLePhuChinh?: number;
+  tenDoi?: string;
   id: string;
   ngay: string; // YYYY-MM-DD
   doiId?: string; // Mã đội phụ trách (e.g. 'doi-1', 'doi-2')

@@ -31,6 +31,7 @@ import {
 
 export const EmployeeManagementView: React.FC = () => {
   const {
+    userAccounts,
     employees,
     teams,
     addEmployee,
@@ -48,7 +49,7 @@ export const EmployeeManagementView: React.FC = () => {
   const isAdmin = currentUser.vaiTro === 'ADMIN';
   const isDoiTruong = currentUser.vaiTro === 'DOI_TRUONG';
   // Đội trưởng và Quản trị viên đều có thể thêm, sửa, xóa thành viên trong mỗi đội
-  const canManageMembers = isAdmin || isDoiTruong;
+  const canManageMembers = isAdmin;
 
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'CHINH' | 'PHU'>('ALL');
@@ -113,12 +114,13 @@ export const EmployeeManagementView: React.FC = () => {
   const [newTeamData, setNewTeamData] = useState<{
     id?: string;
     tenDoi: string;
-    doiTruongTen: string;
+    doiTruongUserId: string;
+    donGiaMacDinh: string;
     khuVuc: string;
     moTa: string;
   }>({
     tenDoi: '',
-    doiTruongTen: '',
+    doiTruongUserId: '', donGiaMacDinh: '1200',
     khuVuc: '',
     moTa: '',
   });
@@ -298,25 +300,29 @@ export const EmployeeManagementView: React.FC = () => {
     if (editingTeamId) {
       const res = updateTeam(editingTeamId, {
         tenDoi: newTeamData.tenDoi.trim(),
-        doiTruongTen: newTeamData.doiTruongTen.trim() || undefined,
+        doiTruongUserId: newTeamData.doiTruongUserId,
+        donGiaMacDinh: Number(newTeamData.donGiaMacDinh),
         khuVuc: newTeamData.khuVuc.trim() || undefined,
         moTa: newTeamData.moTa.trim() || undefined,
       });
       showToast(res.message, res.success ? 'success' : 'error');
+      if (!res.success) return;
       setEditingTeamId(null);
     } else {
       const res = addTeam({
         tenDoi: newTeamData.tenDoi.trim(),
-        doiTruongTen: newTeamData.doiTruongTen.trim() || undefined,
+        doiTruongUserId: newTeamData.doiTruongUserId,
+        donGiaMacDinh: Number(newTeamData.donGiaMacDinh),
         khuVuc: newTeamData.khuVuc.trim() || undefined,
         moTa: newTeamData.moTa.trim() || undefined,
       });
       showToast(res.message, res.success ? 'success' : 'error');
+      if (!res.success) return;
     }
 
     setNewTeamData({
       tenDoi: '',
-      doiTruongTen: '',
+      doiTruongUserId: '', donGiaMacDinh: '1200',
       khuVuc: '',
       moTa: '',
     });
@@ -373,7 +379,7 @@ export const EmployeeManagementView: React.FC = () => {
               <button
                 onClick={() => {
                   setEditingTeamId(null);
-                  setNewTeamData({ tenDoi: '', doiTruongTen: '', khuVuc: '', moTa: '' });
+                  setNewTeamData({ tenDoi: '', doiTruongUserId: '', donGiaMacDinh: '1200', khuVuc: '', moTa: '' });
                   setIsTeamModalOpen(true);
                 }}
                 id="btn-manage-teams"
@@ -518,7 +524,7 @@ export const EmployeeManagementView: React.FC = () => {
             <button
               onClick={() => {
                 setEditingTeamId(null);
-                setNewTeamData({ tenDoi: '', doiTruongTen: '', khuVuc: '', moTa: '' });
+                setNewTeamData({ tenDoi: '', doiTruongUserId: '', donGiaMacDinh: '1200', khuVuc: '', moTa: '' });
                 setIsTeamModalOpen(true);
               }}
               className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer inline-flex items-center gap-1.5"
@@ -578,7 +584,7 @@ export const EmployeeManagementView: React.FC = () => {
           const isChinh = emp.vaiTro === 'CHINH';
           const isActive = emp.trangThai === 'DANG_LAM';
           const empTeam = teams.find(t => t.id === emp.doiId);
-          const isCaptainOfTeam = empTeam?.doiTruongTen?.toLowerCase() === emp.hoTen.toLowerCase();
+          const isCaptainOfTeam = userAccounts.some(u => u.id === empTeam?.doiTruongUserId && u.nhanVienId === emp.id);
 
           return (
             <div
@@ -1161,7 +1167,8 @@ export const EmployeeManagementView: React.FC = () => {
                               setEditingTeamId(team.id);
                               setNewTeamData({
                                 tenDoi: team.tenDoi,
-                                doiTruongTen: team.doiTruongTen || '',
+                                doiTruongUserId: team.doiTruongUserId || '',
+                                donGiaMacDinh: String(team.donGiaMacDinh ?? 1200),
                                 khuVuc: team.khuVuc || '',
                                 moTa: team.moTa || '',
                               });
@@ -1191,15 +1198,11 @@ export const EmployeeManagementView: React.FC = () => {
                         </span>
                         <select
                           value={
-                            employees.find(
-                              m =>
-                                (team.doiTruongUserId && m.id === team.doiTruongUserId) ||
-                                m.hoTen.trim().toLowerCase() === team.doiTruongTen?.trim().toLowerCase()
-                            )?.id || ''
+                            userAccounts.find(u => u.id === team.doiTruongUserId)?.nhanVienId || ''
                           }
                           onChange={e => {
-                            if (e.target.value) {
-                              const res = appointCaptain(team.id, e.target.value);
+                            {
+                              const res = e.target.value ? appointCaptain(team.id, e.target.value) : updateTeam(team.id, { doiTruongUserId: '' });
                               showToast(res.message, res.success ? 'success' : 'error');
                             }
                           }}
@@ -1207,7 +1210,7 @@ export const EmployeeManagementView: React.FC = () => {
                         >
                           <option value="">-- Chọn nhân viên làm Đội trưởng ({employees.length}) --</option>
                           {employees.map(m => {
-                            const isCurrent = (team.doiTruongUserId && m.id === team.doiTruongUserId) || m.hoTen.trim().toLowerCase() === team.doiTruongTen?.trim().toLowerCase();
+                            const isCurrent = userAccounts.some(u => u.id === team.doiTruongUserId && u.nhanVienId === m.id);
                             return (
                               <option key={m.id} value={m.id}>
                                 {isCurrent ? '⭐ ' : ''}{m.hoTen} ({m.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'}{m.doiId === team.id ? ' - Đang trong đội' : ''})
@@ -1248,40 +1251,18 @@ export const EmployeeManagementView: React.FC = () => {
                       Đội trưởng phụ trách:
                     </label>
                     <div className="flex gap-1.5">
-                      <select
-                        value={
-                          employees.find(
-                            e => e.hoTen.trim().toLowerCase() === newTeamData.doiTruongTen.trim().toLowerCase()
-                          )?.id || ''
-                        }
-                        onChange={e => {
-                          const emp = employees.find(m => m.id === e.target.value);
-                          if (emp) {
-                            setNewTeamData({ ...newTeamData, doiTruongTen: emp.hoTen });
-                          } else if (e.target.value === '') {
-                            setNewTeamData({ ...newTeamData, doiTruongTen: '' });
-                          }
-                        }}
-                        className="p-2.5 bg-stone-50 border border-stone-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-orange-500 text-xs flex-1 font-bold"
-                      >
-                        <option value="">-- Chọn nhân viên có sẵn ({employees.length}) --</option>
-                        {employees.map(e => (
-                          <option key={e.id} value={e.id}>
-                            {e.hoTen} ({e.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'})
-                          </option>
-                        ))}
+                      <select aria-label="Đội trưởng phụ trách" value={newTeamData.doiTruongUserId} onChange={e => setNewTeamData({ ...newTeamData, doiTruongUserId: e.target.value })} className="p-2.5 border rounded-xl w-full">
+                        <option value="">Chưa bổ nhiệm</option>
+                        {userAccounts.filter(u => u.vaiTro !== 'ADMIN' && employees.some(e => e.id === u.nhanVienId && e.trangThai === 'DANG_LAM')).map(u => <option key={u.id} value={u.id}>{u.tenHienThi} (@{u.username})</option>)}
                       </select>
-                      <input
-                        type="text"
-                        value={newTeamData.doiTruongTen}
-                        onChange={e => setNewTeamData({ ...newTeamData, doiTruongTen: e.target.value })}
-                        placeholder="Hoặc gõ tên..."
-                        className="p-2.5 bg-stone-50 border border-stone-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-orange-500 text-xs w-36"
-                      />
                     </div>
                   </div>
                 </div>
 
+                <label className="block font-bold text-stone-700">Đơn giá mặc định (đ/con)
+                  <input aria-label="Đơn giá mặc định" type="number" min="0" step="1" required value={newTeamData.donGiaMacDinh} onChange={e => setNewTeamData({ ...newTeamData, donGiaMacDinh: e.target.value })} className="block w-full p-2.5 border rounded-xl mt-1" />
+                  <span className="block text-xs font-normal text-stone-500 mt-1">Mặc định 1.200 đ/con. Thay đổi không tính lại các ngày đã lưu. Giá riêng từng ngày đặt tại Chấm công ngày.</span>
+                </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block font-bold text-stone-700 mb-1">
@@ -1315,7 +1296,7 @@ export const EmployeeManagementView: React.FC = () => {
                       type="button"
                       onClick={() => {
                         setEditingTeamId(null);
-                        setNewTeamData({ tenDoi: '', doiTruongTen: '', khuVuc: '', moTa: '' });
+                        setNewTeamData({ tenDoi: '', doiTruongUserId: '', donGiaMacDinh: '1200', khuVuc: '', moTa: '' });
                       }}
                       className="px-3.5 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold rounded-xl cursor-pointer"
                     >

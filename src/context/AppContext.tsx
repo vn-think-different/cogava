@@ -1,3 +1,4 @@
+import { assignRole, moveEmployee, teamPrice, Organization } from '../utils/teamManagement';
 import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import {
   BangChamCongNgay,
@@ -261,11 +262,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const unsubUsers = FirestoreSyncService.subscribeUsers(cloudUsers => {
-      if (cloudUsers.length > 0) {
         setUserAccounts(cloudUsers);
         PayrollDatabase.saveUserAccounts(cloudUsers);
-
-      }
     });
 
     const unsubAudit = FirestoreSyncService.subscribeAuditLogs(cloudLogs => {
@@ -548,6 +546,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateCurrentUserProfile = (
     data: Partial<Pick<UserAccount, 'tenHienThi' | 'sdt' | 'email' | 'soCccd' | 'cccdNgayCap' | 'cccdNoiCap' | 'cccdMatTruoc' | 'cccdMatSau'>>
   ): { success: boolean; message: string } => {
+    if (!isAuthenticated) return { success: false, message: 'Vui lòng đăng nhập.' };
+    const allowedFields = ['tenHienThi', 'sdt', 'email', 'soCccd', 'cccdNgayCap', 'cccdNoiCap', 'cccdMatTruoc', 'cccdMatSau'];
+    data = Object.fromEntries(Object.entries(data).filter(([key]) => allowedFields.includes(key)));
     const result = PayrollDatabase.updateProfile(currentUser.id, data);
     if (result.success && result.updatedUser) {
       setUserAccounts(prev =>
@@ -635,175 +636,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'UserAccount',
         userId,
         'SUA',
-        `Admin ${currentUser.tenHienThi} đặt lại mật khẩu cho tài khoản ${userId} về mặc định (${newPassword})`
+        `Admin ${currentUser.tenHienThi} đặt lại mật khẩu cho tài khoản ${userId} `
       );
     }
     return result;
   };
 
   // Admin thêm tài khoản mới
-  const addUserAccount = (
-    data: Omit<UserAccount, 'id' | 'ngayTao'>
-  ): { success: boolean; message: string } => {
-    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') {
-      return { success: false, message: 'Chỉ Quản trị viên mới có quyền tạo tài khoản người dùng!' };
-    }
-    const result = PayrollDatabase.addUserAccount(data);
-    if (result.success && result.user) {
-      setUserAccounts(PayrollDatabase.getUserAccounts());
-      FirestoreSyncService.saveUser(result.user).catch(e => console.warn('Cloud user save:', e));
-      createAuditLog(
-        'UserAccount',
-        result.user.id,
-        'TAO',
-        `Admin tạo tài khoản mới: "${result.user.username}" (${result.user.tenHienThi} - ${result.user.vaiTro})`
-      );
-    }
-    return result;
-  };
+  const addUserAccount = (data: Omit<UserAccount, 'id' | 'ngayTao'>) => organizationAction(state => {
+    if (!data.username.trim() || state.users.some(u => u.username.toLowerCase() === data.username.trim().toLowerCase())) throw new Error('Tên đăng nhập trống hoặc đã tồn tại.');
+    if (data.nhanVienId && state.users.some(u => u.nhanVienId === data.nhanVienId)) throw new Error('Nhân viên đã có tài khoản.');
+    const user: UserAccount = { ...data, username: data.username.trim(), id: 'usr-' + crypto.randomUUID(), ngayTao: new Date().toISOString() };
+    return assignRole({ ...state, users: [...state.users, user] }, user.id, data.vaiTro, data.doiId);
+  });
 
   // Cập nhật phân quyền và đội nhóm cho tài khoản người dùng
-  const updateUserRoleAndTeam = (
-    userId: string,
-    vaiTro: VaiTroNguoiDung,
-    doiId?: string
-  ): { success: boolean; message: string } => {
-    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') {
-      return { success: false, message: 'Chỉ Quản trị viên mới có quyền thay đổi phân quyền và phân đội!' };
+  const organization = (): Organization => ({ teams: PayrollDatabase.getTeams(), employees: PayrollDatabase.getEmployees(), users: PayrollDatabase.getUserAccounts() });
+  const persistOrganization = (before: Organization, next: Organization) => {
+    PayrollDatabase.saveTeams(next.teams); PayrollDatabase.saveEmployees(next.employees); PayrollDatabase.saveUserAccounts(next.users);
+    setTeams(next.teams); setEmployees(next.employees); setUserAccounts(next.users);
+    FirestoreSyncService.saveOrganization(before, next).catch(e => console.warn('Cloud organization save:', e));
+  };
+  const organizationAction = (action: (state: Organization) => Organization) => {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return { success: false, message: 'Chỉ quản trị viên được quản lý đội và thành viên.' };
+    try {
+      const before = organization();
+      const next = action(before);
+      if (!next.users.some(u => u.vaiTro === 'ADMIN')) throw new Error('Phải giữ ít nhất một tài khoản quản trị.');
+      persistOrganization(before, next);
+      const changedIds = (key: keyof Organization) => [...new Set([...before[key], ...next[key]].map(item => item.id))].filter(id => JSON.stringify(before[key].find(item => item.id === id)) !== JSON.stringify(next[key].find(item => item.id === id)));
+      createAuditLog('DoiNhanVien', 'organization', 'SUA', 'Cập nhật đội, nhân viên và phân quyền; giữ nguyên lịch sử chấm công.', null, { teams: changedIds('teams'), employees: changedIds('employees'), users: changedIds('users') });
+      return { success: true, message: 'Đã cập nhật trên máy, đang đồng bộ. Lịch sử chấm công được giữ nguyên.' };
     }
-
-    const targetUser = userAccounts.find(u => u.id === userId);
-    if (!targetUser) {
-      return { success: false, message: 'Không tìm thấy tài khoản người dùng!' };
-    }
-
-    const assignedDoiId = vaiTro === 'ADMIN' ? undefined : (doiId || undefined);
-
-    // 1. Cập nhật UserAccount
-    const updatedUser: UserAccount = {
-      ...targetUser,
-      vaiTro,
-      doiId: assignedDoiId,
-    };
-
-    PayrollDatabase.updateUserAccount(userId, updatedUser);
-    setUserAccounts(PayrollDatabase.getUserAccounts());
-    FirestoreSyncService.saveUser(updatedUser).catch(e => console.warn('Cloud user update:', e));
-
-    // 2. Nếu tài khoản liên kết với Hồ sơ Nhân viên (nhanVienId)
-    if (targetUser.nhanVienId) {
-      setEmployees(prev => {
-        const updated = prev.map(emp => {
-          if (emp.id === targetUser.nhanVienId) {
-            return {
-              ...emp,
-              ...(assignedDoiId ? { doiId: assignedDoiId } : {}),
-            };
-          }
-          return emp;
-        });
-        PayrollDatabase.saveEmployees(updated);
-        return updated;
-      });
-    }
-
-    // 3. Nếu vai trò chuyển thành DOI_TRUONG và có assignedDoiId
-    if (vaiTro === 'DOI_TRUONG' && assignedDoiId) {
-      setTeams(prev => {
-        const updated = prev.map(t => {
-          if (t.id === assignedDoiId) {
-            return {
-              ...t,
-              doiTruongTen: targetUser.tenHienThi,
-              doiTruongUserId: targetUser.id,
-            };
-          }
-          // Nếu user này trước đó là đội trưởng của đội khác, xóa khỏi đội cũ
-          if (
-            t.id !== assignedDoiId &&
-            (t.doiTruongUserId === targetUser.id ||
-              (t.doiTruongTen && t.doiTruongTen.trim().toLowerCase() === targetUser.tenHienThi.trim().toLowerCase()))
-          ) {
-            return {
-              ...t,
-              doiTruongTen: undefined,
-              doiTruongUserId: undefined,
-            };
-          }
-          return t;
-        });
-        PayrollDatabase.saveTeams(updated);
-        return updated;
-      });
-    } else if (vaiTro !== 'DOI_TRUONG') {
-      // Nếu chuyển khỏi vai trò DOI_TRUONG, gỡ bỏ chức danh đội trưởng của các đội
-      setTeams(prev => {
-        const updated = prev.map(t => {
-          if (
-            t.doiTruongUserId === targetUser.id ||
-            (t.doiTruongTen && t.doiTruongTen.trim().toLowerCase() === targetUser.tenHienThi.trim().toLowerCase())
-          ) {
-            return {
-              ...t,
-              doiTruongTen: undefined,
-              doiTruongUserId: undefined,
-            };
-          }
-          return t;
-        });
-        PayrollDatabase.saveTeams(updated);
-        return updated;
-      });
-    }
-
-    // 4. Nếu là currentUser, đồng bộ session đang đăng nhập
-    if (currentUser.id === userId) {
-      setCurrentUser(prev => ({
-        ...prev,
-        vaiTro,
-        doiId: assignedDoiId,
-      }));
-    }
-
-    const teamObj = teams.find(t => t.id === assignedDoiId);
-    const teamName = teamObj ? teamObj.tenDoi : vaiTro === 'ADMIN' ? 'Toàn công ty' : 'Chưa phân đội';
-    const roleName = vaiTro === 'ADMIN' ? 'Quản trị viên' : vaiTro === 'DOI_TRUONG' ? 'Đội trưởng' : 'Nhân viên';
-
-    createAuditLog(
-      'UserAccount',
-      userId,
-      'SUA',
-      `Thay đổi quyền/đội cho @${targetUser.username} (${targetUser.tenHienThi}) -> Vai trò: ${roleName}, Đội: ${teamName}`
-    );
-
-    return {
-      success: true,
-      message: `Đã cập nhật phân quyền "${roleName}" và đội "${teamName}" cho ${targetUser.tenHienThi}!`,
-    };
+    catch (error) { return { success: false, message: error instanceof Error ? error.message : 'Không thể cập nhật.' }; }
+  };
+  const updateUserRoleAndTeam = (userId: string, vaiTro: VaiTroNguoiDung, doiId?: string) => {
+    const result = organizationAction(state => assignRole(state, userId, vaiTro, doiId));
+    if (result.success) createAuditLog('UserAccount', userId, 'SUA', 'Cập nhật quyền và đội: ' + vaiTro + ' / ' + (doiId || 'Chưa phân đội'));
+    return result;
   };
 
   // Admin xóa tài khoản
-  const deleteUserAccount = (userId: string): { success: boolean; message: string } => {
-    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') {
-      return { success: false, message: 'Chỉ Quản trị viên mới có quyền xóa tài khoản!' };
-    }
-    const target = userAccounts.find(u => u.id === userId);
-    const result = PayrollDatabase.deleteUserAccount(userId);
-    if (result.success) {
-      setUserAccounts(PayrollDatabase.getUserAccounts());
-      FirestoreSyncService.deleteUser(userId).catch(e => console.warn('Cloud user delete:', e));
-      createAuditLog(
-        'UserAccount',
-        userId,
-        'XOA',
-        `Admin xóa tài khoản người dùng: ${target?.tenHienThi || userId}`
-      );
-    }
-    return result;
-  };
+  const deleteUserAccount = (userId: string) => organizationAction(state => {
+    if (userId === currentUser.id) throw new Error('Không thể xóa tài khoản đang đăng nhập.');
+    return { ...state, users: state.users.filter(u => u.id !== userId), teams: state.teams.map(t => t.doiTruongUserId === userId ? { ...t, doiTruongUserId: '', doiTruongTen: '' } : t) };
+  });
 
   // Xóa sạch CSDL chấm công về CSDL trắng để kiểm thử
   const clearAttendanceToBlank = (): { success: boolean; message: string } => {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return { success: false, message: 'Chỉ quản trị viên được xóa dữ liệu.' };
     const res = PayrollDatabase.clearAttendanceToBlank();
     setAttendanceRecords([]);
     FirestoreSyncService.clearAllAttendance().catch(e => console.warn('Cloud clear attendance:', e));
@@ -866,170 +747,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  // Quản lý Đội nhóm (Teams)
-  const addTeam = (data: Omit<DoiNhanVien, 'id' | 'ngayTao'>): { success: boolean; message: string } => {
-    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') {
-      return { success: false, message: 'Chỉ Quản trị viên mới có quyền tạo Đội mới!' };
-    }
-    const res = PayrollDatabase.addTeam(data);
-    if (res.success && res.team) {
-      const newTeam = res.team;
-      const newTeamId = newTeam.id;
-      setTeams(prev => {
-        const updated = [...prev, newTeam];
-        PayrollDatabase.saveTeams(updated);
-        return updated;
-      });
-      FirestoreSyncService.saveTeam(newTeam).catch(e => console.warn('Cloud team save:', e));
-      createAuditLog('DoiNhanVien', newTeamId, 'TAO', `Tạo đội mới: "${data.tenDoi}"`);
-
-      // Nếu có chỉ định Đội trưởng ngay khi tạo đội (bằng tên hoặc ID)
-      if (data.doiTruongTen) {
-        const emp = employees.find(
-          e =>
-            (data.doiTruongUserId && e.id === data.doiTruongUserId) ||
-            e.hoTen.trim().toLowerCase() === data.doiTruongTen!.trim().toLowerCase()
-        ) || PayrollDatabase.getEmployees().find(
-          e =>
-            (data.doiTruongUserId && e.id === data.doiTruongUserId) ||
-            e.hoTen.trim().toLowerCase() === data.doiTruongTen!.trim().toLowerCase()
-        );
-        if (emp) {
-          appointCaptain(newTeamId, emp.id);
-        }
-      }
-    }
-    return res;
-  };
-
-  const updateTeam = (id: string, data: Partial<DoiNhanVien>): { success: boolean; message: string } => {
-    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') {
-      return { success: false, message: 'Chỉ Quản trị viên mới có quyền sửa thông tin Đội!' };
-    }
-    const res = PayrollDatabase.updateTeam(id, data);
-    if (res.success) {
-      setTeams(prev => {
-        const updated = prev.map(t => (t.id === id ? { ...t, ...data } : t));
-        PayrollDatabase.saveTeams(updated);
-        const updatedTeam = updated.find(t => t.id === id);
-        if (updatedTeam) FirestoreSyncService.saveTeam(updatedTeam).catch(e => console.warn('Cloud team update:', e));
-        return updated;
-      });
-      createAuditLog('DoiNhanVien', id, 'SUA', `Cập nhật thông tin đội ${id}`);
-
-      // Nếu đổi đội trưởng, đồng bộ nhân viên và tài khoản mà KHÔNG gọi lại updateTeam
-      if (data.doiTruongTen) {
-        const emp = employees.find(
-          e =>
-            (data.doiTruongUserId && e.id === data.doiTruongUserId) ||
-            e.hoTen.trim().toLowerCase() === data.doiTruongTen!.trim().toLowerCase()
-        );
-        if (emp) {
-          setEmployees(prev => {
-            const updated = prev.map(e => (e.id === emp.id ? { ...e, doiId: id } : e));
-            PayrollDatabase.saveEmployees(updated);
-            FirestoreSyncService.saveEmployee({ ...emp, doiId: id }).catch(e => console.warn('Cloud emp update:', e));
-            return updated;
-          });
-          const userAcc = userAccounts.find(u => u.nhanVienId === emp.id || u.username === emp.sdt);
-          if (userAcc) {
-            setUserAccounts(prev => {
-              const updated = prev.map(u =>
-                u.id === userAcc.id ? { ...u, vaiTro: 'DOI_TRUONG' as const, doiId: id } : u
-              );
-              PayrollDatabase.saveUserAccounts(updated);
-              FirestoreSyncService.saveUser({ ...userAcc, vaiTro: 'DOI_TRUONG', doiId: id }).catch(e => console.warn('Cloud user update:', e));
-              return updated;
-            });
-          }
-        }
-      }
-    }
-    return res;
-  };
-
-  const deleteTeam = (id: string): { success: boolean; message: string } => {
-    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') {
-      return { success: false, message: 'Chỉ Quản trị viên mới có quyền xóa Đội!' };
-    }
-    const targetTeam = teams.find(t => t.id === id);
-    const teamName = targetTeam?.tenDoi || id;
-
-    // 1. Xóa đội khỏi CSDL Teams
-    const res = PayrollDatabase.deleteTeam(id);
-    if (!res.success) return res;
-
-    setTeams(prev => prev.filter(t => t.id !== id));
-    FirestoreSyncService.deleteTeam(id).catch(e => console.warn('Cloud team delete:', e));
-
-    // 2. Cập nhật nhân viên thuộc đội này (bỏ liên kết đội)
-    setEmployees(prev => {
-      const updated = prev.map(emp => (emp.doiId === id ? { ...emp, doiId: '' } : emp));
-      PayrollDatabase.saveEmployees(updated);
-      return updated;
-    });
-
-    // 3. Cập nhật tài khoản người dùng liên kết
-    setUserAccounts(prev => {
-      const updated = prev.map(u => (u.doiId === id ? { ...u, doiId: undefined } : u));
-      PayrollDatabase.saveUserAccounts(updated);
-      return updated;
-    });
-
-    createAuditLog('DoiNhanVien', id, 'XOA', `Xóa đội "${teamName}" khỏi hệ thống`);
-    return { success: true, message: `Đã xóa "${teamName}" thành công!` };
-  };
-
+  const saveTeam = (id: string, data: Partial<DoiNhanVien>, creating = false) => organizationAction(state => {
+    const old = state.teams.find(t => t.id === id);
+    if (!creating && !old) throw new Error('Không tìm thấy đội.');
+    const name = (data.tenDoi ?? old?.tenDoi ?? '').trim();
+    if (!name || state.teams.some(t => t.id !== id && t.tenDoi.trim().toLocaleLowerCase('vi') === name.toLocaleLowerCase('vi'))) throw new Error('Tên đội trống hoặc đã tồn tại.');
+    const price = data.donGiaMacDinh ?? old?.donGiaMacDinh ?? 1200;
+    if (!Number.isSafeInteger(price) || price < 0) throw new Error('Đơn giá phải là số nguyên không âm.');
+    for (const [date, value] of Object.entries(data.donGiaTheoNgay ?? {})) if (!isValidDate(date) || !Number.isSafeInteger(value) || value < 0) throw new Error('Đơn giá theo ngày không hợp lệ.');
+    const captainId = data.doiTruongUserId ?? old?.doiTruongUserId ?? '';
+    const team: DoiNhanVien = { ...old, ...data, id, tenDoi: name, donGiaMacDinh: price, ngayTao: old?.ngayTao ?? new Date().toISOString(), doiTruongUserId: '', doiTruongTen: '' };
+    let next: Organization = { ...state, teams: creating ? [...state.teams, team] : state.teams.map(t => t.id === id ? team : t), users: state.users.map(u => u.vaiTro === 'DOI_TRUONG' && u.doiId === id ? { ...u, vaiTro: 'NHAN_VIEN' } : u) };
+    if (captainId) next = assignRole(next, captainId, 'DOI_TRUONG', id);
+    return next;
+  });
+  const addTeam = (data: Omit<DoiNhanVien, 'id' | 'ngayTao'>) => saveTeam('doi-' + crypto.randomUUID(), data, true);
+  const updateTeam = (id: string, data: Partial<DoiNhanVien>) => saveTeam(id, data);
+  const deleteTeam = (id: string) => organizationAction(state => {
+    if (!state.teams.some(t => t.id === id)) throw new Error('Không tìm thấy đội.');
+    return { teams: state.teams.filter(t => t.id !== id), employees: state.employees.map(e => e.doiId === id ? { ...e, doiId: '' } : e), users: state.users.map(u => u.doiId === id ? { ...u, doiId: '', vaiTro: u.vaiTro === 'DOI_TRUONG' ? 'NHAN_VIEN' : u.vaiTro } : u) };
+  });
   const assignEmployeeToTeam = (empId: string, teamId: string) => {
-    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return;
-    setEmployees(prev => {
-      const updated = prev.map(emp => (emp.id === empId ? { ...emp, doiId: teamId } : emp));
-      PayrollDatabase.saveEmployees(updated);
-      const target = updated.find(e => e.id === empId);
-      if (target) FirestoreSyncService.saveEmployee(target).catch(e => console.warn('Cloud emp assign:', e));
-      return updated;
-    });
-    setUserAccounts(prev => {
-      const updated = prev.map(u => (u.nhanVienId === empId ? { ...u, doiId: teamId } : u));
-      PayrollDatabase.saveUserAccounts(updated);
-      const targetUser = updated.find(u => u.nhanVienId === empId);
-      if (targetUser) FirestoreSyncService.saveUser(targetUser).catch(e => console.warn('Cloud user assign:', e));
-      return updated;
-    });
-    const targetEmp = employees.find(e => e.id === empId);
-    const targetTeam = teams.find(t => t.id === teamId);
-    createAuditLog(
-      'NhanVien',
-      empId,
-      'SUA',
-      `Phân công nhân viên ${targetEmp?.hoTen || empId} vào đội "${targetTeam?.tenDoi || teamId}"`
-    );
+    const result = organizationAction(state => moveEmployee(state, empId, teamId));
+    if (!result.success) alert(result.message);
   };
 
   // Quản lý nhân viên
   const addEmployee = (data: Omit<NhanVien, 'id'>) => {
     if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return;
-    const newId = `emp-${Date.now()}`;
-    const assignedTeam = data.doiId || (teams[0]?.id || 'doi-1');
+    const newId = 'emp-' + crypto.randomUUID();
+    const assignedTeam = data.doiId || '';
+    if (assignedTeam && !teams.some(t => t.id === assignedTeam)) return;
     const newEmp: NhanVien = {
       ...data,
       id: newId,
       doiId: assignedTeam,
     };
-    setEmployees(prev => {
-      const updated = [...prev, newEmp];
-      PayrollDatabase.saveEmployees(updated);
-      return updated;
-    });
-    FirestoreSyncService.saveEmployee(newEmp).catch(e => console.warn('Cloud emp save:', e));
+
 
     // Tự động tạo tài khoản người dùng đăng nhập cho nhân viên mới
-    const rawUsername = data.hoTen
+    let rawUsername = data.hoTen
       .toLowerCase()
-      .normalize('NFD')
+      .replace(/đ/g, 'd').normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]/g, '') || `nv${Date.now().toString().slice(-4)}`;
 
+    const baseUsername = rawUsername;
+    let suffix = 1;
+    while (PayrollDatabase.getUserAccounts().some(u => u.username.toLowerCase() === rawUsername)) rawUsername = baseUsername + suffix++;
     const userAccountData: Omit<UserAccount, 'id' | 'ngayTao'> = {
       username: rawUsername,
       password: '123456',
@@ -1045,231 +810,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cccdMatSau: data.cccdMatSau,
       avatar: 'preset-worker-dat',
     };
-    const createdAccRes = PayrollDatabase.addUserAccount(userAccountData);
-    setUserAccounts(PayrollDatabase.getUserAccounts());
-    if (createdAccRes.user) {
-      FirestoreSyncService.saveUser(createdAccRes.user).catch(e => console.warn('Cloud user save:', e));
-    }
+    const result = organizationAction(state => ({ ...state, employees: [...state.employees, newEmp], users: [...state.users, { ...userAccountData, id: 'usr-' + crypto.randomUUID(), ngayTao: new Date().toISOString() }] }));
+    if (!result.success) { alert(result.message); return; }
 
     createAuditLog(
       'NhanVien',
       newEmp.id,
       'TAO',
-      `Thêm nhân viên mới: ${newEmp.hoTen} (${newEmp.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'}). Đội: ${assignedTeam}. Đã cấp tài khoản: "${rawUsername}" / MK: 123456`,
+      `Thêm nhân viên mới: ${newEmp.hoTen} (${newEmp.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'}). Đội: ${assignedTeam}. Đã cấp tài khoản: "${rawUsername}"`,
       null,
       { ...newEmp }
     );
   };
 
   const updateEmployee = (id: string, data: Partial<NhanVien>) => {
-    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return;
-    const currentEmp = employees.find(e => e.id === id);
-    if (!currentEmp) return;
-
-    setEmployees(prev => {
-      const updated = prev.map(emp => (emp.id === id ? { ...emp, ...data } : emp));
-      PayrollDatabase.saveEmployees(updated);
-      const target = updated.find(e => e.id === id);
-      if (target) FirestoreSyncService.saveEmployee(target).catch(e => console.warn('Cloud emp update:', e));
-      return updated;
+    const result = organizationAction(state => {
+      const old = state.employees.find(e => e.id === id);
+      if (!old) throw new Error('Không tìm thấy nhân viên.');
+      let next = data.doiId !== undefined && data.doiId !== old.doiId ? moveEmployee(state, id, data.doiId) : state;
+      if (data.trangThai === 'DA_NGHI') for (const user of next.users.filter(u => u.nhanVienId === id && u.vaiTro === 'DOI_TRUONG')) next = assignRole(next, user.id, 'NHAN_VIEN', user.doiId);
+      const employee = { ...old, ...data, id };
+      return { ...next, employees: next.employees.map(e => e.id === id ? employee : e), users: next.users.map(u => u.nhanVienId === id ? { ...u, tenHienThi: employee.hoTen, sdt: employee.sdt, soCccd: employee.soCccd, cccdNgayCap: employee.cccdNgayCap, cccdNoiCap: employee.cccdNoiCap, cccdMatTruoc: employee.cccdMatTruoc, cccdMatSau: employee.cccdMatSau } : u), teams: next.teams.map(t => next.users.some(u => u.id === t.doiTruongUserId && u.nhanVienId === id) ? { ...t, doiTruongTen: employee.hoTen } : t) };
     });
+    if (!result.success) alert(result.message);
+  };
+  const deleteEmployee = (id: string) => organizationAction(state => {
+    if (state.users.some(u => u.nhanVienId === id && u.id === currentUser.id)) throw new Error('Không thể xóa hồ sơ tài khoản đang đăng nhập.');
+    const deletedUsers = state.users.filter(u => u.nhanVienId === id).map(u => u.id);
+    return { employees: state.employees.filter(e => e.id !== id), users: state.users.filter(u => !deletedUsers.includes(u.id)), teams: state.teams.map(t => deletedUsers.includes(t.doiTruongUserId || '') ? { ...t, doiTruongUserId: '', doiTruongTen: '' } : t) };
+  });
 
-    // Đồng bộ sang tài khoản nếu đổi thông tin (đội, họ tên, sđt, CCCD)
-    setUserAccounts(prev => {
-      const updated = prev.map(u => {
-        if (u.nhanVienId === id) {
-          const updatedUser = {
-            ...u,
-            ...(data.doiId ? { doiId: data.doiId } : {}),
-            ...(data.hoTen ? { tenHienThi: data.hoTen } : {}),
-            ...(data.sdt !== undefined ? { sdt: data.sdt } : {}),
-            ...(data.soCccd !== undefined ? { soCccd: data.soCccd } : {}),
-            ...(data.cccdNgayCap !== undefined ? { cccdNgayCap: data.cccdNgayCap } : {}),
-            ...(data.cccdNoiCap !== undefined ? { cccdNoiCap: data.cccdNoiCap } : {}),
-            ...(data.cccdMatTruoc !== undefined ? { cccdMatTruoc: data.cccdMatTruoc } : {}),
-            ...(data.cccdMatSau !== undefined ? { cccdMatSau: data.cccdMatSau } : {}),
-          };
-          FirestoreSyncService.saveUser(updatedUser).catch(e => console.warn('Cloud user sync:', e));
-          return updatedUser;
-        }
-        return u;
-      });
-      PayrollDatabase.saveUserAccounts(updated);
-      return updated;
-    });
-
-    if (currentUser.nhanVienId === id) {
-      setCurrentUser(prev => ({
-        ...prev,
-        ...(data.hoTen ? { tenHienThi: data.hoTen } : {}),
-        ...(data.doiId ? { doiId: data.doiId } : {}),
-        ...(data.soCccd !== undefined ? { soCccd: data.soCccd } : {}),
-        ...(data.cccdNgayCap !== undefined ? { cccdNgayCap: data.cccdNgayCap } : {}),
-        ...(data.cccdNoiCap !== undefined ? { cccdNoiCap: data.cccdNoiCap } : {}),
-        ...(data.cccdMatTruoc !== undefined ? { cccdMatTruoc: data.cccdMatTruoc } : {}),
-        ...(data.cccdMatSau !== undefined ? { cccdMatSau: data.cccdMatSau } : {}),
-      }));
-    }
-
-    createAuditLog(
-      'NhanVien',
-      id,
-      'SUA',
-      `Cập nhật thông tin nhân viên: ${currentEmp.hoTen}`,
-      { ...currentEmp },
-      { ...data }
-    );
+  const appointCaptain = (teamId: string, empId: string) => {
+    const user = PayrollDatabase.getUserAccounts().find(u => u.nhanVienId === empId);
+    if (!user || user.vaiTro === 'ADMIN') return { success: false, message: 'Chọn nhân viên đang làm việc có tài khoản nhân viên.' };
+    return updateUserRoleAndTeam(user.id, 'DOI_TRUONG', teamId);
   };
 
-  const deleteEmployee = (id: string): { success: boolean; message: string } => {
-    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return { success: false, message: 'Chỉ quản trị viên được thực hiện thao tác này.' };
-    const currentEmp = employees.find(e => e.id === id);
-    if (!currentEmp) {
-      return { success: false, message: 'Không tìm thấy nhân viên!' };
-    }
-
-    // 1. Xóa nhân viên khỏi danh sách
-    setEmployees(prev => {
-      const updated = prev.filter(emp => emp.id !== id);
-      PayrollDatabase.saveEmployees(updated);
-      return updated;
-    });
-    FirestoreSyncService.deleteEmployee(id).catch(e => console.warn('Cloud emp delete:', e));
-
-    // 2. Xóa tài khoản người dùng tương ứng nếu có
-    const userToDelete = userAccounts.find(u => u.nhanVienId === id);
-    if (userToDelete) {
-      FirestoreSyncService.deleteUser(userToDelete.id).catch(e => console.warn('Cloud user delete:', e));
-    }
-    setUserAccounts(prev => {
-      const updated = prev.filter(u => u.nhanVienId !== id);
-      PayrollDatabase.saveUserAccounts(updated);
-      return updated;
-    });
-
-    // 3. Nếu nhân viên là Đội trưởng của đội nào đó, gỡ bỏ chức vụ đội trưởng
-    setTeams(prev => {
-      const updated = prev.map(t => {
-        if (
-          (t.doiTruongTen && t.doiTruongTen.trim().toLowerCase() === currentEmp.hoTen.trim().toLowerCase()) ||
-          t.doiTruongUserId === currentEmp.id
-        ) {
-          const modTeam = {
-            ...t,
-            doiTruongTen: undefined,
-            doiTruongUserId: undefined,
-          };
-          FirestoreSyncService.saveTeam(modTeam).catch(e => console.warn('Cloud team update:', e));
-          return modTeam;
-        }
-        return t;
-      });
-      PayrollDatabase.saveTeams(updated);
-      return updated;
-    });
-
-    createAuditLog(
-      'NhanVien',
-      id,
-      'XOA',
-      `Xóa nhân viên ${currentEmp.hoTen} khỏi hệ thống`,
-      { ...currentEmp },
-      null
-    );
-
-    return { success: true, message: `Đã xóa nhân viên ${currentEmp.hoTen} thành công!` };
-  };
-
-  const appointCaptain = (teamId: string, empId: string): { success: boolean; message: string } => {
-    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return { success: false, message: 'Chỉ quản trị viên được thực hiện thao tác này.' };
-    const team = teams.find(t => t.id === teamId) || PayrollDatabase.getTeams().find(t => t.id === teamId);
-    const emp = employees.find(e => e.id === empId) || PayrollDatabase.getEmployees().find(e => e.id === empId);
-
-    if (!team) return { success: false, message: 'Không tìm thấy đội!' };
-    if (!emp) return { success: false, message: 'Không tìm thấy nhân viên!' };
-
-    // Tìm tài khoản người dùng của nhân viên
-    const userAcc = userAccounts.find(u => u.nhanVienId === empId || u.username === emp.sdt);
-
-    // 1. Cập nhật đội trong CSDL & State
-    const teamUpdateData: Partial<DoiNhanVien> = {
-      doiTruongUserId: userAcc?.id || emp.id,
-      doiTruongTen: emp.hoTen,
-    };
-    PayrollDatabase.updateTeam(teamId, teamUpdateData);
-    setTeams(prev => {
-      const updated = prev.map(t => (t.id === teamId ? { ...t, ...teamUpdateData } : t));
-      const foundTeam = updated.find(t => t.id === teamId);
-      if (foundTeam) FirestoreSyncService.saveTeam(foundTeam).catch(e => console.warn('Cloud team update:', e));
-      return updated;
-    });
-
-    // 2. Gán nhân viên vào đội này
-    setEmployees(prev => {
-      const updated = prev.map(e => (e.id === empId ? { ...e, doiId: teamId } : e));
-      PayrollDatabase.saveEmployees(updated);
-      const updatedEmp = updated.find(e => e.id === empId);
-      if (updatedEmp) FirestoreSyncService.saveEmployee(updatedEmp).catch(e => console.warn('Cloud emp update:', e));
-      return updated;
-    });
-
-    // 3. Nếu có tài khoản, nâng quyền lên DOI_TRUONG
-    if (userAcc) {
-      setUserAccounts(prev => {
-        const updated = prev.map(u =>
-          u.id === userAcc.id ? { ...u, vaiTro: 'DOI_TRUONG' as const, doiId: teamId } : u
-        );
-        PayrollDatabase.saveUserAccounts(updated);
-        const targetUser = updated.find(u => u.id === userAcc.id);
-        if (targetUser) FirestoreSyncService.saveUser(targetUser).catch(e => console.warn('Cloud user update:', e));
-        return updated;
-      });
-    }
-
-    createAuditLog(
-      'DoiNhanVien',
-      teamId,
-      'SUA',
-      `Bổ nhiệm ${emp.hoTen} làm Đội trưởng cho đội "${team.tenDoi}"`
-    );
-
-    return {
-      success: true,
-      message: `Đã bổ nhiệm ${emp.hoTen} làm Đội trưởng cho "${team.tenDoi}" thành công!`,
-    };
-  };
 
   const toggleEmployeeStatus = (id: string) => {
-    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return;
-    const currentEmp = employees.find(e => e.id === id);
-    if (!currentEmp) return;
-
-    const newStatus: TrangThaiNhanVien = currentEmp.trangThai === 'DANG_LAM' ? 'DA_NGHI' : 'DANG_LAM';
-    const todayStr = new Date().toISOString().substring(0, 10);
-
-    setEmployees(prev => {
-      const updated: NhanVien[] = prev.map(emp =>
-        emp.id === id
-          ? {
-              ...emp,
-              trangThai: newStatus,
-              ngayNghiViec: newStatus === 'DA_NGHI' ? todayStr : undefined,
-            }
-          : emp
-      );
-      PayrollDatabase.saveEmployees(updated);
-      const target = updated.find(e => e.id === id);
-      if (target) FirestoreSyncService.saveEmployee(target).catch(e => console.warn('Cloud emp status:', e));
-      return updated;
-    });
-    createAuditLog(
-      'NhanVien',
-      id,
-      'SUA',
-      `Đổi trạng thái nhân viên ${currentEmp.hoTen}: ${newStatus === 'DANG_LAM' ? 'Đang làm việc' : 'Đã nghỉ việc'}`,
-      { trangThai: currentEmp.trangThai },
-      { trangThai: newStatus }
-    );
+    const employee = employees.find(e => e.id === id);
+    if (!employee) return;
+    updateEmployee(id, { trangThai: employee.trangThai === 'DANG_LAM' ? 'DA_NGHI' : 'DANG_LAM', ngayNghiViec: employee.trangThai === 'DANG_LAM' ? new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }) : null });
   };
 
   // Kiểm tra tháng đã khoá sổ chưa
@@ -1326,7 +907,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Lưu chấm công ngày (hỗ trợ theo đội)
   const saveDailyAttendance = (input: SaveAttendanceInput): { success: boolean; message: string } => {
     const { ngay, doiId, soGa, donGia, ghiChuDonGia, presentEmployeeIds } = input;
-    const targetDoiId = doiId || currentUser.doiId || 'doi-1';
+    const targetDoiId = doiId || currentUser.doiId || '';
+    if (!teams.some(t => t.id === targetDoiId)) return { success: false, message: 'Vui lòng chọn đội hợp lệ.' };
 
     if (!isAuthenticated || !canManageTeam(currentUser, targetDoiId)) {
       return { success: false, message: 'Bạn không có quyền chấm công cho đội này.' };
@@ -1334,24 +916,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!isValidDate(ngay)) return { success: false, message: 'Ngày chấm công không hợp lệ.' };
     const inputError = validatePayrollNumbers(soGa, donGia, getConfigForDate(ngay).tyLePhuChinh);
     if (inputError) return { success: false, message: inputError };
-    if (new Set(presentEmployeeIds).size !== presentEmployeeIds.length || presentEmployeeIds.some(id =>
-      !employees.some(e => e.id === id && (e.doiId === targetDoiId || (!e.doiId && targetDoiId === 'doi-1'))))) {
-      return { success: false, message: 'Danh sách chấm công có nhân viên trùng lặp hoặc không thuộc đội.' };
-    }
-    const existing = attendanceRecords.find(
-      r => r.ngay === ngay && (r.doiId === targetDoiId || (!r.doiId && targetDoiId === 'doi-1'))
-    );
-    if (existing?.trangThai === 'DA_CHOT' || isMonthLocked(ngay.slice(0, 7))) {
-      return { success: false, message: 'Tháng hoặc ngày đã chốt. Quản trị viên phải mở lại sổ và ghi lý do trước khi sửa.' };
-    }
-
-    // Chỉ nhân viên thuộc đội mới được đưa vào tính toán công thức ngày
-    const teamEmployees = employees.filter(
-      e => e.doiId === targetDoiId || (!e.doiId && targetDoiId === 'doi-1')
-    );
-    const activeEmployees = teamEmployees.filter(
-      e => e.trangThai === 'DANG_LAM' || presentEmployeeIds.includes(e.id)
-    );
+    const existing = attendanceRecords.find(r => r.ngay === ngay && (r.doiId || 'doi-1') === targetDoiId);
+    if (currentUser.vaiTro === 'DOI_TRUONG' && (existing || donGia !== teamPrice(teams.find(t => t.id === targetDoiId), ngay))) return { success: false, message: 'Đội trưởng chỉ được tạo chấm công mới theo đơn giá Admin đã thiết lập.' };
+    if (existing?.trangThai === 'DA_CHOT' || isMonthLocked(ngay.slice(0, 7))) return { success: false, message: 'Ngày hoặc tháng đã chốt. Admin phải mở sổ trước khi sửa.' };
+    const activeEmployees = existing ? existing.chiTiet.map(c => ({ id: c.nhanVienId, hoTen: c.hoTen, vaiTro: c.vaiTro })) : employees.filter(e => e.doiId === targetDoiId && e.trangThai === 'DANG_LAM');
+    if (new Set(presentEmployeeIds).size !== presentEmployeeIds.length || presentEmployeeIds.some(id => !activeEmployees.some(e => e.id === id))) return { success: false, message: 'Danh sách nhân viên không hợp lệ.' };
     const effectiveConfig = getConfigForDate(ngay);
 
     const engineInput = activeEmployees.map(emp => ({
@@ -1364,7 +933,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const result = calculateDailyPayroll({
       soGa,
       donGia,
-      tyLePhuChinh: effectiveConfig.tyLePhuChinh,
+      tyLePhuChinh: existing?.tyLePhuChinh ?? configs.find(c => c.id === existing?.cauHinhId)?.tyLePhuChinh ?? effectiveConfig.tyLePhuChinh,
       employees: engineInput,
     });
 
@@ -1385,6 +954,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       thuTrongTuan: getDayOfWeekVN(ngay),
       soGaBatDuoc: soGa,
       donGiaApDung: donGia,
+      tenDoi: existing?.tenDoi ?? teams.find(t => t.id === targetDoiId)?.tenDoi,
+      tyLePhuChinh: existing?.tyLePhuChinh ?? configs.find(c => c.id === existing?.cauHinhId)?.tyLePhuChinh ?? effectiveConfig.tyLePhuChinh,
       cauHinhId: effectiveConfig.id,
       ghiChuDonGia,
       tongLuongNgay: result.tongLuongNgay,
@@ -1439,7 +1010,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const target = attendanceRecords.find(r => r.id === id);
     if (!target) return;
 
-    if (!isAuthenticated || !canManageTeam(currentUser, target.doiId || 'doi-1')) return;
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return;
     if (target.trangThai === 'DA_CHOT') {
       alert('Không thể xoá bản ghi đã chốt sổ!');
       return;
@@ -1470,6 +1041,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     window.location.reload();
   };
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const account = userAccounts.find(u => u.id === currentUser.id);
+    if (!account) { setIsAuthenticated(false); sessionStorage.removeItem(SESSION_ACTIVE_KEY); sessionStorage.removeItem(SESSION_USER_KEY); sessionStorage.removeItem(SESSION_TOKEN_KEY); return; }
+    if (account.vaiTro !== currentUser.vaiTro || account.doiId !== currentUser.doiId || account.nhanVienId !== currentUser.nhanVienId) {
+      setCurrentUser(prev => ({ ...prev, vaiTro: account.vaiTro, doiId: account.doiId, nhanVienId: account.nhanVienId }));
+    }
+  }, [userAccounts, isAuthenticated, currentUser.id, currentUser.vaiTro, currentUser.doiId, currentUser.nhanVienId]);
   const value: AppContextType = {
     companyInfo: THONG_TIN_CONG_TY,
     isCloudSynced,
@@ -1479,15 +1058,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     closeSessionConflictModal,
     activeTab,
     setActiveTab,
-    employees,
-    teams,
+    employees: currentUser.vaiTro === 'ADMIN' ? employees : employees.filter(e => currentUser.vaiTro === 'DOI_TRUONG' ? !!currentUser.doiId && e.doiId === currentUser.doiId : e.id === currentUser.nhanVienId),
+    teams: currentUser.vaiTro === 'ADMIN' ? teams : teams.filter(t => t.id === currentUser.doiId),
     configs,
-    attendanceRecords,
-    auditLogs,
-    userAccounts,
+    attendanceRecords: currentUser.vaiTro === 'ADMIN' ? attendanceRecords : currentUser.vaiTro === 'DOI_TRUONG' ? attendanceRecords.filter(r => !!currentUser.doiId && (r.doiId || 'doi-1') === currentUser.doiId) : attendanceRecords.filter(r => r.chiTiet.some(c => c.nhanVienId === currentUser.nhanVienId)).map(r => ({ ...r, chiTiet: r.chiTiet.filter(c => c.nhanVienId === currentUser.nhanVienId), tongLuongNgay: r.chiTiet.filter(c => c.nhanVienId === currentUser.nhanVienId).reduce((sum, c) => sum + c.luongNhanDuoc, 0) })),
+    auditLogs: currentUser.vaiTro === 'ADMIN' ? auditLogs : [],
+    userAccounts: currentUser.vaiTro === 'ADMIN' ? userAccounts : [],
     currentUser,
     setCurrentUser,
-    availableUsers,
+    availableUsers: currentUser.vaiTro === 'ADMIN' ? availableUsers : [],
     isAuthenticated,
     login,
     loginWithCredentials,

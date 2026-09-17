@@ -135,19 +135,19 @@ export const Header: React.FC<HeaderProps> = ({
       id: 'daily',
       label: 'Chấm công ngày',
       icon: <CalendarCheck2 className="w-4 h-4" />,
-      visibleRoles: ['ADMIN', 'DOI_TRUONG', 'NHAN_VIEN'],
+      visibleRoles: ['ADMIN', 'DOI_TRUONG'],
     },
     {
       id: 'monthly',
       label: 'Bảng lương tháng',
       icon: <FileSpreadsheet className="w-4 h-4" />,
-      visibleRoles: ['ADMIN', 'DOI_TRUONG', 'NHAN_VIEN'],
+      visibleRoles: ['ADMIN', 'DOI_TRUONG'],
     },
     {
       id: 'employees',
       label: 'Nhân viên',
       icon: <Users className="w-4 h-4" />,
-      visibleRoles: ['ADMIN', 'DOI_TRUONG'],
+      visibleRoles: ['ADMIN'],
     },
   ];
 

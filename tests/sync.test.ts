@@ -4,6 +4,9 @@ import assert from 'node:assert/strict';
 let failReads = false;
 let sessionToken = 'new-device';
 let deleted = false;
+let batchWrites: string[] = [];
+let commits = 0;
+let snapshotCallback: Function;
 mock.module('firebase/firestore', { namedExports: {
   initializeFirestore: () => ({}), getFirestore: () => ({}),
   collection: (_db: unknown, name: string) => name,
@@ -14,8 +17,8 @@ mock.module('firebase/firestore', { namedExports: {
     if (failReads) throw new Error('offline');
     return { forEach: () => {} };
   },
-  setDoc: async () => {}, deleteDoc: async () => {}, onSnapshot: () => () => {},
-  writeBatch: () => ({}), query: (value: unknown) => value, orderBy: () => null, limit: () => null,
+  setDoc: async () => {}, deleteDoc: async () => {}, onSnapshot: (_ref: unknown, options: unknown, callback: Function) => { snapshotCallback = callback; return () => {}; },
+  writeBatch: () => ({ set: (ref: string) => batchWrites.push('set:' + ref), delete: (ref: string) => batchWrites.push('delete:' + ref), commit: async () => { commits++; } }), query: (value: unknown) => value, orderBy: () => null, limit: () => null,
   runTransaction: async (_db: unknown, callback: Function) => callback({
     get: async () => ({ exists: () => true, data: () => ({ sessionToken }) }),
     delete: () => { deleted = true; },
@@ -43,4 +46,20 @@ test('logout never deletes another device session or deletes without a token', a
   assert.equal(deleted, false);
   await FirestoreSyncService.clearActiveSession('u', 'new-device');
   assert.equal(deleted, true);
+});
+
+test('organization changes update linked collections in one commit without touching attendance', async () => {
+  batchWrites = []; commits = 0;
+  await FirestoreSyncService.saveOrganization({ teams: [{ id: 'old', tenDoi: 'Old' }], users: [], employees: [] }, { teams: [{ id: 'new', tenDoi: 'New' }], users: [], employees: [] });
+  assert.deepEqual(batchWrites, ['delete:teams/old', 'set:teams/new']);
+  assert.equal(commits, 1);
+});
+
+test('an empty offline cache cannot wipe local team data; authoritative empty server data can', () => {
+  let callbacks = 0;
+  FirestoreSyncService.subscribeTeams(() => { callbacks++; });
+  snapshotCallback({ metadata: { fromCache: true }, forEach: () => {} });
+  assert.equal(callbacks, 0);
+  snapshotCallback({ metadata: { fromCache: false }, forEach: () => {} });
+  assert.equal(callbacks, 1);
 });

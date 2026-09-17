@@ -1,3 +1,4 @@
+import { historicalEmployees } from '../utils/teamManagement';
 import { csvRow } from '../utils/csv';
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
@@ -131,13 +132,7 @@ export const MonthlyPayrollView: React.FC = () => {
   // Find logged-in employee when role is NHAN_VIEN
   const loggedInEmployee = useMemo(() => {
     if (!isEmployee) return null;
-    return (
-      employees.find(e => e.id === currentUser.nhanVienId) ||
-      employees.find(
-        e => e.hoTen.trim().toLowerCase() === currentUser.tenHienThi.trim().toLowerCase()
-      ) ||
-      employees[0]
-    );
+    return employees.find(e => e.id === currentUser.nhanVienId);
   }, [isEmployee, currentUser, employees]);
 
   // Visible employees based on role-based data isolation:
@@ -145,18 +140,10 @@ export const MonthlyPayrollView: React.FC = () => {
   // - DOI_TRUONG: Only see employees of their own team
   // - ADMIN: Can see all or filter by team
   const visibleEmployees = useMemo(() => {
-    if (isEmployee && loggedInEmployee) {
-      return [loggedInEmployee];
-    }
-    if (isDoiTruong) {
-      const userTeamId = currentUser.doiId || 'doi-1';
-      return employees.filter(e => e.doiId === userTeamId || (!e.doiId && userTeamId === 'doi-1'));
-    }
-    if (selectedTeamFilter !== 'ALL') {
-      return employees.filter(e => e.doiId === selectedTeamFilter || (!e.doiId && selectedTeamFilter === 'doi-1'));
-    }
-    return employees;
-  }, [isEmployee, loggedInEmployee, isDoiTruong, currentUser.doiId, selectedTeamFilter, employees]);
+    if (isEmployee) return loggedInEmployee ? [loggedInEmployee] : [];
+    const current = employees.filter(e => isDoiTruong ? !!currentUser.doiId && e.doiId === currentUser.doiId : selectedTeamFilter === 'ALL' || e.doiId === selectedTeamFilter);
+    return historicalEmployees(monthRecords, current);
+  }, [isEmployee, loggedInEmployee, employees, isDoiTruong, currentUser.doiId, selectedTeamFilter, monthRecords]);
 
   // Aggregation per employee (Sheet "Tổng hợp")
   const employeeSummaries = useMemo(() => {
@@ -166,8 +153,7 @@ export const MonthlyPayrollView: React.FC = () => {
 
       monthRecords.forEach(rec => {
         const detail = rec.chiTiet.find(
-          c => c.nhanVienId === emp.id ||
-          (c.hoTen && emp.hoTen && c.hoTen.trim().toLowerCase() === emp.hoTen.trim().toLowerCase())
+          c => c.nhanVienId === emp.id
         );
         if (detail && detail.coMat) {
           daysCount += 1;

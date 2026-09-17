@@ -27,7 +27,8 @@ const MainAppContent: React.FC = () => {
     isSyncingCloud,
   } = useApp();
 
-  const currentTab = (activeTab as NavTab) || (currentUser.vaiTro === 'NHAN_VIEN' ? 'portal' : 'dashboard');
+  const allowedTabs: NavTab[] = currentUser.vaiTro === 'ADMIN' ? ['dashboard', 'daily', 'monthly', 'employees', 'config', 'audit'] : currentUser.vaiTro === 'DOI_TRUONG' ? ['dashboard', 'daily', 'monthly'] : ['portal'];
+  const currentTab = allowedTabs.includes(activeTab as NavTab) ? activeTab as NavTab : allowedTabs[0];
 
   // Sync activeTab if role changes
   useEffect(() => {

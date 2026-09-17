@@ -1,3 +1,5 @@
+import { teamPrice } from '../utils/teamManagement';
+import { NhanVien, PayrollCalculationResult } from '../types';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateDailyPayroll } from '../utils/payrollEngine';
@@ -29,6 +31,7 @@ import confetti from 'canvas-confetti';
 
 export const DailyAttendanceView: React.FC = () => {
   const {
+    updateTeam,
     attendanceRecords,
     employees,
     teams,
@@ -42,7 +45,7 @@ export const DailyAttendanceView: React.FC = () => {
   } = useApp();
 
   // Current selected date (Default to 2026-09-13 or today)
-  const [selectedDate, setSelectedDate] = useState<string>('2026-09-13');
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }));
   
   // Selected Team: For DOI_TRUONG locked to their team, for ADMIN selectable
   const [selectedTeamId, setSelectedTeamId] = useState<string>(() => {
@@ -53,7 +56,7 @@ export const DailyAttendanceView: React.FC = () => {
   });
 
   const currentTeamId = currentUser.vaiTro === 'DOI_TRUONG'
-    ? (currentUser.doiId || 'doi-1')
+    ? (currentUser.doiId || '')
     : (currentUser.vaiTro === 'NHAN_VIEN' ? (currentUser.doiId || 'doi-1') : selectedTeamId);
 
   const currentTeam = teams.find(t => t.id === currentTeamId);
@@ -79,8 +82,8 @@ export const DailyAttendanceView: React.FC = () => {
     if (showOverridePrice && customUnitPrice !== '' && !isNaN(Number(customUnitPrice))) {
       return Number(customUnitPrice);
     }
-    return effectiveConfig.donGiaBinhQuan;
-  }, [showOverridePrice, customUnitPrice, effectiveConfig]);
+    return teamPrice(currentTeam, selectedDate);
+  }, [showOverridePrice, customUnitPrice, currentTeam, selectedDate]);
 
   // Existing record for this date & team (if any)
   const existingRecord = useMemo(() => {
@@ -99,33 +102,28 @@ export const DailyAttendanceView: React.FC = () => {
   // - Admin: Toàn quyền chấm công, xem, sửa, điều chỉnh và xóa bảng chấm công.
   // - Đội trưởng: Mỗi đội chỉ chấm công 1 lần duy nhất trong ngày. Đội trưởng chỉ được chấm công khi CHƯA có bản ghi (!existingRecord && !isLocked). Sau khi đã chấm công, Đội trưởng chỉ được xem, KHÔNG được quyền sửa đổi.
   // - Nhân viên: Chế độ chỉ đọc.
-  const canEdit = isAdmin ? true : (isDoiTruong ? (!existingRecord && !isLocked) : false);
-  const canDelete = isAdmin && !!existingRecord;
+  const canEdit = isAdmin ? !isLocked : (isDoiTruong ? (!existingRecord && !isLocked) : false);
+  const canDelete = isAdmin && !!existingRecord && !isLocked;
 
   // Logged-in employee (for data isolation when role is NHAN_VIEN)
   const loggedInEmployee = useMemo(() => {
     if (!isEmployee) return null;
-    return (
-      employees.find(e => e.id === currentUser.nhanVienId) ||
-      employees.find(
-        e => e.hoTen.trim().toLowerCase() === currentUser.tenHienThi.trim().toLowerCase()
-      ) ||
-      employees[0]
-    );
+    return employees.find(e => e.id === currentUser.nhanVienId);
   }, [isEmployee, currentUser, employees]);
 
   // Filter employees belonging to the selected team
-  const teamEmployees = useMemo(() => {
+  const teamEmployees = useMemo<NhanVien[]>(() => {
+    if (existingRecord) return existingRecord.chiTiet.map(c => ({ id: c.nhanVienId, hoTen: c.hoTen, vaiTro: c.vaiTro, trangThai: 'DANG_LAM' as const, ngayVaoLam: existingRecord.ngay, doiId: currentTeamId }));
     return employees.filter(
       e => e.doiId === currentTeamId || (!e.doiId && currentTeamId === 'doi-1')
     );
-  }, [employees, currentTeamId]);
+  }, [employees, currentTeamId, existingRecord]);
 
   // Load record data when date or team changes
   useEffect(() => {
     if (existingRecord) {
       setChickenCount(String(existingRecord.soGaBatDuoc));
-      if (existingRecord.donGiaApDung !== effectiveConfig.donGiaBinhQuan) {
+      if (true) {
         setShowOverridePrice(true);
         setCustomUnitPrice(String(existingRecord.donGiaApDung));
         setPriceOverrideReason(existingRecord.ghiChuDonGia || '');
@@ -156,7 +154,7 @@ export const DailyAttendanceView: React.FC = () => {
   }, [teamEmployees, selectedEmpIds]);
 
   // Run real-time calculation preview
-  const calculationPreview = useMemo(() => {
+  const calculationPreview = useMemo<PayrollCalculationResult>(() => {
     const soGa = Number(chickenCount) || 0;
     const empInput = activeEmployees.map(e => ({
       id: e.id,
@@ -165,13 +163,15 @@ export const DailyAttendanceView: React.FC = () => {
       coMat: selectedEmpIds.includes(e.id),
     }));
 
-    return calculateDailyPayroll({
-      soGa,
-      donGia: activeUnitPrice,
-      tyLePhuChinh: effectiveConfig.tyLePhuChinh,
+    const unchanged = existingRecord && soGa === existingRecord.soGaBatDuoc && activeUnitPrice === existingRecord.donGiaApDung && existingRecord.chiTiet.every(c => c.coMat === selectedEmpIds.includes(c.nhanVienId));
+    const calculated = calculateDailyPayroll({
+      soGa: Math.max(0, Number.isSafeInteger(soGa) ? soGa : 0),
+      donGia: Math.max(0, Number.isSafeInteger(activeUnitPrice) ? activeUnitPrice : 0),
+      tyLePhuChinh: existingRecord?.tyLePhuChinh ?? configs.find(c => c.id === existingRecord?.cauHinhId)?.tyLePhuChinh ?? effectiveConfig.tyLePhuChinh,
       employees: empInput,
     });
-  }, [chickenCount, activeUnitPrice, effectiveConfig, activeEmployees, selectedEmpIds]);
+    return unchanged ? { ...calculated, chiTietLuong: existingRecord.chiTiet, tongLuongNgay: existingRecord.tongLuongNgay, tongLuongThucChia: existingRecord.chiTiet.reduce((sum, c) => sum + c.luongNhanDuoc, 0) } : calculated;
+  }, [chickenCount, activeUnitPrice, effectiveConfig, activeEmployees, selectedEmpIds, existingRecord, configs]);
 
   // Quick select actions
   const selectAll = () => {
@@ -516,7 +516,7 @@ export const DailyAttendanceView: React.FC = () => {
                   <label className="text-xs font-bold text-stone-700 uppercase tracking-wider">
                     Đơn giá áp dụng
                   </label>
-                  {canEdit && (
+                  {isAdmin && canEdit && (
                     <button
                       type="button"
                       onClick={() => setShowOverridePrice(!showOverridePrice)}
@@ -532,7 +532,7 @@ export const DailyAttendanceView: React.FC = () => {
                   <div className="bg-stone-50 border border-stone-200 rounded-xl px-4 py-3 flex items-center justify-between">
                     <div>
                       <span className="text-xl font-extrabold text-stone-900 font-mono">
-                        {formatNumber(effectiveConfig.donGiaBinhQuan)}
+                        {formatNumber(activeUnitPrice)}
                       </span>
                       <span className="text-xs text-stone-500 font-semibold ml-1">đ/con</span>
                     </div>
@@ -548,7 +548,7 @@ export const DailyAttendanceView: React.FC = () => {
                         type="number"
                         min="0"
                         step="50"
-                        disabled={!canEdit}
+                        disabled={!isAdmin || !canEdit}
                         value={customUnitPrice}
                         onChange={e => setCustomUnitPrice(e.target.value)}
                         placeholder="VD: 1250"
@@ -561,7 +561,7 @@ export const DailyAttendanceView: React.FC = () => {
                     <input
                       id="input-override-reason"
                       type="text"
-                      disabled={!canEdit}
+                      disabled={!isAdmin || !canEdit}
                       value={priceOverrideReason}
                       onChange={e => setPriceOverrideReason(e.target.value)}
                       placeholder="Lý do điều chỉnh đơn giá riêng hôm nay..."
@@ -572,6 +572,11 @@ export const DailyAttendanceView: React.FC = () => {
               </div>
             </div>
 
+            {isAdmin && !existingRecord && currentTeam && <button type="button" className="w-full border border-orange-300 rounded-xl px-4 py-2 text-orange-700 font-semibold" onClick={() => {
+              const result = updateTeam(currentTeam.id, { donGiaTheoNgay: { ...currentTeam.donGiaTheoNgay, [selectedDate]: activeUnitPrice } });
+              setSaveStatus({ type: result.success ? 'success' : 'error', message: result.success ? 'Đã đặt đơn giá cho ngày này. Đội trưởng sẽ dùng giá này khi chấm công.' : result.message });
+            }}>Lưu đơn giá ngày cho đội (chưa lưu chấm công)</button>}
+            {existingRecord && <p className="text-xs text-stone-500">Đang xem dữ liệu đã lưu. Thay đổi đơn giá mặc định hoặc chuyển đội không làm thay đổi bản ghi này.</p>}
             {/* Total Day Salary Highlight */}
             <div className="p-4 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border border-orange-200 flex items-center justify-between">
               <div>

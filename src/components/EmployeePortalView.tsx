@@ -36,9 +36,7 @@ export const EmployeePortalView: React.FC = () => {
       const found = employees.find(e => e.id === currentUser.nhanVienId);
       if (found) return found;
     }
-    // Fallback if logged in by name or first employee
-    const matchName = employees.find(e => e.hoTen === currentUser.tenHienThi);
-    return matchName || employees[0];
+    return undefined;
   }, [currentUser, employees]);
 
   // Selected Month (default to 2026-09 or 2026-08)
@@ -329,6 +327,7 @@ export const EmployeePortalView: React.FC = () => {
                   <div>
                     <span className="text-base font-extrabold text-stone-900 font-mono block">
                       {formatVND(item.luong)}
+                      <span className="block text-xs font-normal text-stone-500">{formatNumber(item.record.donGiaApDung)} đ/con</span>
                     </span>
                     <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100/60 px-1.5 py-0.5 rounded">
                       Có mặt đi làm

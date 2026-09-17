@@ -59,6 +59,19 @@ function reportSyncError() {
 }
 
 export class FirestoreSyncService {
+  static async saveOrganization(before: import('../utils/teamManagement').Organization, after: import('../utils/teamManagement').Organization) {
+    try {
+      const batch = writeBatch(db);
+      for (const key of ['teams', 'employees', 'users'] as const) {
+        for (const item of before[key]) if (!after[key].some(next => next.id === item.id)) batch.delete(doc(db, key, item.id));
+        for (const item of after[key]) if (JSON.stringify(item) !== JSON.stringify(before[key].find(old => old.id === item.id))) {
+          batch.set(doc(db, key, item.id), cleanForFirestore(item));
+        }
+      }
+      await batch.commit();
+    } catch (error) { reportSyncError(); throw error; }
+  }
+
   // ==========================================
   // 1. TEAMS (Đội nhóm)
   // ==========================================
@@ -66,7 +79,9 @@ export class FirestoreSyncService {
     const colRef = collection(db, 'teams');
     return onSnapshot(
       colRef,
+      { includeMetadataChanges: true },
       (snapshot) => {
+        if (snapshot.metadata.fromCache) return;
         const items: DoiNhanVien[] = [];
         snapshot.forEach((d) => items.push(d.data() as DoiNhanVien));
         callback(items);
@@ -105,7 +120,9 @@ export class FirestoreSyncService {
     const colRef = collection(db, 'employees');
     return onSnapshot(
       colRef,
+      { includeMetadataChanges: true },
       (snapshot) => {
+        if (snapshot.metadata.fromCache) return;
         const items: NhanVien[] = [];
         snapshot.forEach((d) => items.push(d.data() as NhanVien));
         callback(items);
@@ -144,7 +161,9 @@ export class FirestoreSyncService {
     const colRef = collection(db, 'attendance_records');
     return onSnapshot(
       colRef,
+      { includeMetadataChanges: true },
       (snapshot) => {
+        if (snapshot.metadata.fromCache) return;
         const items: BangChamCongNgay[] = [];
         snapshot.forEach((d) => items.push(d.data() as BangChamCongNgay));
         callback(items);
@@ -212,7 +231,9 @@ export class FirestoreSyncService {
     const colRef = collection(db, 'configs');
     return onSnapshot(
       colRef,
+      { includeMetadataChanges: true },
       (snapshot) => {
+        if (snapshot.metadata.fromCache) return;
         const items: CauHinhLuong[] = [];
         snapshot.forEach((d) => items.push(d.data() as CauHinhLuong));
         if (items.length > 0) {
@@ -243,7 +264,9 @@ export class FirestoreSyncService {
     const colRef = collection(db, 'users');
     return onSnapshot(
       colRef,
+      { includeMetadataChanges: true },
       (snapshot) => {
+        if (snapshot.metadata.fromCache) return;
         const items: UserAccount[] = [];
         snapshot.forEach((d) => items.push(d.data() as UserAccount));
         callback(items);
@@ -282,7 +305,9 @@ export class FirestoreSyncService {
     const q = query(collection(db, 'audit_logs'), orderBy('thoiGian', 'desc'), limit(100));
     return onSnapshot(
       q,
+      { includeMetadataChanges: true },
       (snapshot) => {
+        if (snapshot.metadata.fromCache) return;
         const items: NhatKyThayDoi[] = [];
         snapshot.forEach((d) => items.push(d.data() as NhatKyThayDoi));
         callback(items);
