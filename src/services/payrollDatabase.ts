@@ -23,7 +23,7 @@ export const DEFAULT_USER_ACCOUNTS: UserAccount[] = [
   {
     id: 'usr-thach',
     username: 'thach',
-    password: '123456',
+    password: 'Thach@Cogava2026',
     tenHienThi: 'Thạch',
     vaiTro: 'ADMIN',
     avatar: 'preset-admin',
@@ -70,8 +70,8 @@ export class PayrollDatabase {
         console.error('Lỗi đọc teams từ DB:', e);
       }
     }
-    this.saveTeams(DEFAULT_TEAMS);
-    return DEFAULT_TEAMS;
+    this.saveTeams([]);
+    return [];
   }
 
   static saveTeams(teams: DoiNhanVien[]): void {
@@ -129,7 +129,7 @@ export class PayrollDatabase {
       accounts.unshift({
         id: 'usr-thach',
         username: 'thach',
-        password: '123456',
+        password: 'Thach@Cogava2026',
         tenHienThi: 'Thạch',
         vaiTro: 'ADMIN',
         avatar: 'preset-admin',
@@ -176,8 +176,8 @@ export class PayrollDatabase {
         console.error('Lỗi đọc employees từ DB:', e);
       }
     }
-    this.saveEmployees(INITIAL_EMPLOYEES);
-    return INITIAL_EMPLOYEES;
+    this.saveEmployees([]);
+    return [];
   }
 
   static saveEmployees(employees: NhanVien[]): void {
@@ -306,7 +306,7 @@ export class PayrollDatabase {
    */
   static adminResetPassword(
     userId: string,
-    newPassword = '123456'
+    newPassword = 'Cogava@2026'
   ): { success: boolean; message: string } {
     const users = this.getUserAccounts();
     const userIndex = users.findIndex(u => u.id === userId);

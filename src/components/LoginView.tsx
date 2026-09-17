@@ -74,6 +74,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               <input
                 id="input-login-username"
                 type="text"
+                autoComplete="username"
                 value={username}
                 onChange={e => {
                   setUsername(e.target.value);
@@ -93,6 +94,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 <input
                   id="input-login-password"
                   type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
                   value={password}
                   onChange={e => {
                     setPassword(e.target.value);
@@ -107,6 +109,38 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   className="absolute right-3.5 top-3 text-stone-400 hover:text-stone-700 cursor-pointer"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Gợi ý tài khoản quản trị viên */}
+            <div className="p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs space-y-1.5">
+              <div className="text-[11px] font-bold text-stone-600 uppercase tracking-wider flex items-center gap-1.5">
+                <KeyRound className="w-3.5 h-3.5 text-orange-500" />
+                <span>Tài khoản Quản trị viên:</span>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsername('thach');
+                    setPassword('Thach@Cogava2026');
+                    setErrorMsg('');
+                  }}
+                  className="px-2.5 py-1 bg-white border border-stone-200 hover:border-orange-400 hover:bg-orange-50/50 rounded-lg text-xs font-semibold text-stone-700 cursor-pointer transition-colors"
+                >
+                  Quản trị viên Thạch
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsername('admin');
+                    setPassword('Langbat136@');
+                    setErrorMsg('');
+                  }}
+                  className="px-2.5 py-1 bg-white border border-stone-200 hover:border-orange-400 hover:bg-orange-50/50 rounded-lg text-xs font-semibold text-stone-700 cursor-pointer transition-colors"
+                >
+                  Quản trị viên Admin
                 </button>
               </div>
             </div>

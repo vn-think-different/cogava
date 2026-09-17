@@ -40,9 +40,7 @@ export class FirestoreSyncService {
       (snapshot) => {
         const items: DoiNhanVien[] = [];
         snapshot.forEach((d) => items.push(d.data() as DoiNhanVien));
-        if (items.length > 0) {
-          callback(items);
-        }
+        callback(items);
       },
       (error) => {
         console.warn('Firestore teams sync warning:', error);
@@ -76,9 +74,7 @@ export class FirestoreSyncService {
       (snapshot) => {
         const items: NhanVien[] = [];
         snapshot.forEach((d) => items.push(d.data() as NhanVien));
-        if (items.length > 0) {
-          callback(items);
-        }
+        callback(items);
       },
       (error) => {
         console.warn('Firestore employees sync warning:', error);
@@ -198,9 +194,7 @@ export class FirestoreSyncService {
       (snapshot) => {
         const items: UserAccount[] = [];
         snapshot.forEach((d) => items.push(d.data() as UserAccount));
-        if (items.length > 0) {
-          callback(items);
-        }
+        callback(items);
       },
       (error) => {
         console.warn('Firestore users sync warning:', error);
@@ -359,34 +353,53 @@ export class FirestoreSyncService {
   }
 
   // Đảm bảo dữ liệu cơ sở ban đầu (admin, config) luôn sẵn sàng trên Cloud
+  // Tuyệt đối không tự tạo lại các đội nhóm hay tài khoản nhân viên mà Quản trị viên đã chủ động xóa!
   static async ensureDefaultDataOnCloud(params: {
     defaultTeams: DoiNhanVien[];
     defaultUsers: UserAccount[];
     defaultConfigs: CauHinhLuong[];
   }) {
     try {
-      // 1. Kiểm tra users: nếu thiếu tài khoản mặc định thì tạo
+      const metaDocRef = doc(db, 'system_metadata', 'init_state');
+      const metaSnap = await getDoc(metaDocRef);
+
       const usersSnap = await getDocs(collection(db, 'users'));
-      const existingUsernames = new Set(usersSnap.docs.map((d) => (d.data() as UserAccount).username));
-      for (const u of params.defaultUsers) {
-        if (!existingUsernames.has(u.username)) {
-          await setDoc(doc(db, 'users', u.id), u);
-        }
-      }
 
-      // 2. Kiểm tra configs
-      const configsSnap = await getDocs(collection(db, 'configs'));
-      if (configsSnap.empty) {
-        for (const c of params.defaultConfigs) {
-          await setDoc(doc(db, 'configs', c.id), c);
+      if (!metaSnap.exists()) {
+        // Hệ thống lần đầu tiên khởi tạo trên Cloud
+        if (usersSnap.empty) {
+          for (const u of params.defaultUsers) {
+            await setDoc(doc(db, 'users', u.id), u);
+          }
         }
-      }
-
-      // 3. Kiểm tra teams: nếu trống hoàn toàn thì nạp defaultTeams
-      const teamsSnap = await getDocs(collection(db, 'teams'));
-      if (teamsSnap.empty && params.defaultTeams.length > 0) {
-        for (const t of params.defaultTeams) {
-          await setDoc(doc(db, 'teams', t.id), t);
+        const configsSnap = await getDocs(collection(db, 'configs'));
+        if (configsSnap.empty) {
+          for (const c of params.defaultConfigs) {
+            await setDoc(doc(db, 'configs', c.id), c);
+          }
+        }
+        // Đánh dấu hệ thống đã khởi tạo hoàn tất
+        await setDoc(metaDocRef, {
+          isInitialized: true,
+          initializedAt: new Date().toISOString(),
+        });
+      } else {
+        // Hệ thống ĐÃ KHỞI TẠO:
+        // 1. Tuyệt đối KHÔNG tự động tạo lại bất kỳ đội nhóm nào! (Nếu mảng rỗng nghĩa là admin đã xóa)
+        // 2. Tuyệt đối KHÔNG tự tạo lại các tài khoản nhân sự đã bị xóa!
+        // 3. Chỉ nâng cấp mật khẩu của thach nếu còn là '123456' để tránh Chrome cảnh báo data breach
+        for (const userDoc of usersSnap.docs) {
+          const uData = userDoc.data() as UserAccount;
+          if (uData.username === 'thach' && uData.password === '123456') {
+            await setDoc(doc(db, 'users', userDoc.id), { ...uData, password: 'Thach@Cogava2026' });
+          }
+        }
+        // Nếu chẳng may tất cả admin bị xóa hết, chỉ phục hồi 1 tài khoản admin tối cao để không bị khóa hệ thống
+        if (usersSnap.empty) {
+          const defaultAdmin = params.defaultUsers.find(u => u.username === 'admin') || params.defaultUsers[0];
+          if (defaultAdmin) {
+            await setDoc(doc(db, 'users', defaultAdmin.id), defaultAdmin);
+          }
         }
       }
     } catch (e) {

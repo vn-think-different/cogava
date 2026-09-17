@@ -178,7 +178,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
 
   const handleConfirmResetPassword = () => {
     if (!resettingAccount) return;
-    const res = adminResetUserPassword(resettingAccount.id, '123456');
+    const res = adminResetUserPassword(resettingAccount.id, 'Cogava@2026');
     setStatusMsg({
       type: res.success ? 'success' : 'error',
       message: res.message,
@@ -695,7 +695,7 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
                                   type="button"
                                   onClick={() => handleAdminReset(account)}
                                   className="px-2 py-1 bg-stone-100 hover:bg-amber-100 hover:text-amber-900 text-stone-700 rounded-lg text-[11px] font-semibold border border-stone-200 cursor-pointer transition-colors"
-                                  title="Đặt lại mật khẩu về 123456"
+                                  title="Đặt lại mật khẩu về Cogava@2026"
                                 >
                                   Đặt lại MK
                                 </button>
@@ -935,10 +935,10 @@ export const AccountSettingsModal: React.FC<AccountSettingsModalProps> = ({
       <ConfirmModal
         isOpen={!!resettingAccount}
         title="Đặt lại mật khẩu mặc định"
-        message="Mật khẩu của tài khoản sẽ được đưa về mật khẩu ban đầu là: 123456"
+        message="Mật khẩu của tài khoản sẽ được đưa về mật khẩu ban đầu là: Cogava@2026"
         itemName={resettingAccount ? `@${resettingAccount.username} (${resettingAccount.tenHienThi})` : ''}
         itemLabel="Tài khoản được đặt lại mật khẩu:"
-        itemDetail="Mật khẩu mới sau khi đặt lại: 123456"
+        itemDetail="Mật khẩu mới sau khi đặt lại: Cogava@2026"
         confirmText="Đặt lại mật khẩu"
         cancelText="Hủy"
         type="warning"
