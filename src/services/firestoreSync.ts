@@ -3,6 +3,8 @@ import {
   doc,
   getDoc,
   getDocs,
+  getDocsFromServer,
+  runTransaction,
   setDoc,
   deleteDoc,
   onSnapshot,
@@ -52,6 +54,10 @@ export function cleanForFirestore<T>(data: T): T {
   return data;
 }
 
+function reportSyncError() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('cogava:sync-error'));
+}
+
 export class FirestoreSyncService {
   // ==========================================
   // 1. TEAMS (Đội nhóm)
@@ -66,6 +72,7 @@ export class FirestoreSyncService {
         callback(items);
       },
       (error) => {
+        reportSyncError();
         console.warn('Firestore teams sync warning:', error);
       }
     );
@@ -75,7 +82,9 @@ export class FirestoreSyncService {
     try {
       await setDoc(doc(db, 'teams', team.id), cleanForFirestore(team));
     } catch (e) {
+      reportSyncError();
       console.error('Error saving team to Firestore:', e);
+      throw e;
     }
   }
 
@@ -83,7 +92,9 @@ export class FirestoreSyncService {
     try {
       await deleteDoc(doc(db, 'teams', teamId));
     } catch (e) {
+      reportSyncError();
       console.error('Error deleting team from Firestore:', e);
+      throw e;
     }
   }
 
@@ -100,6 +111,7 @@ export class FirestoreSyncService {
         callback(items);
       },
       (error) => {
+        reportSyncError();
         console.warn('Firestore employees sync warning:', error);
       }
     );
@@ -109,7 +121,9 @@ export class FirestoreSyncService {
     try {
       await setDoc(doc(db, 'employees', emp.id), cleanForFirestore(emp));
     } catch (e) {
+      reportSyncError();
       console.error('Error saving employee to Firestore:', e);
+      throw e;
     }
   }
 
@@ -117,7 +131,9 @@ export class FirestoreSyncService {
     try {
       await deleteDoc(doc(db, 'employees', empId));
     } catch (e) {
+      reportSyncError();
       console.error('Error deleting employee from Firestore:', e);
+      throw e;
     }
   }
 
@@ -134,6 +150,7 @@ export class FirestoreSyncService {
         callback(items);
       },
       (error) => {
+        reportSyncError();
         console.warn('Firestore attendance sync warning:', error);
       }
     );
@@ -143,7 +160,9 @@ export class FirestoreSyncService {
     try {
       await setDoc(doc(db, 'attendance_records', record.id), cleanForFirestore(record));
     } catch (e) {
+      reportSyncError();
       console.error('Error saving attendance record to Firestore:', e);
+      throw e;
     }
   }
 
@@ -151,7 +170,9 @@ export class FirestoreSyncService {
     try {
       await deleteDoc(doc(db, 'attendance_records', recordId));
     } catch (e) {
+      reportSyncError();
       console.error('Error deleting attendance record from Firestore:', e);
+      throw e;
     }
   }
 
@@ -164,7 +185,9 @@ export class FirestoreSyncService {
       snap.forEach((d) => batch.delete(d.ref));
       await batch.commit();
     } catch (e) {
+      reportSyncError();
       console.error('Error clearing attendance records in Firestore:', e);
+      throw e;
     }
   }
 
@@ -176,7 +199,9 @@ export class FirestoreSyncService {
       }
       await batch.commit();
     } catch (e) {
+      reportSyncError();
       console.error('Error batch saving attendance in Firestore:', e);
+      throw e;
     }
   }
 
@@ -195,6 +220,7 @@ export class FirestoreSyncService {
         }
       },
       (error) => {
+        reportSyncError();
         console.warn('Firestore configs sync warning:', error);
       }
     );
@@ -204,7 +230,9 @@ export class FirestoreSyncService {
     try {
       await setDoc(doc(db, 'configs', cfg.id), cleanForFirestore(cfg));
     } catch (e) {
+      reportSyncError();
       console.error('Error saving config to Firestore:', e);
+      throw e;
     }
   }
 
@@ -221,6 +249,7 @@ export class FirestoreSyncService {
         callback(items);
       },
       (error) => {
+        reportSyncError();
         console.warn('Firestore users sync warning:', error);
       }
     );
@@ -230,7 +259,9 @@ export class FirestoreSyncService {
     try {
       await setDoc(doc(db, 'users', user.id), cleanForFirestore(user));
     } catch (e) {
+      reportSyncError();
       console.error('Error saving user to Firestore:', e);
+      throw e;
     }
   }
 
@@ -238,7 +269,9 @@ export class FirestoreSyncService {
     try {
       await deleteDoc(doc(db, 'users', userId));
     } catch (e) {
+      reportSyncError();
       console.error('Error deleting user from Firestore:', e);
+      throw e;
     }
   }
 
@@ -255,6 +288,7 @@ export class FirestoreSyncService {
         callback(items);
       },
       (error) => {
+        reportSyncError();
         console.warn('Firestore audit logs sync warning:', error);
       }
     );
@@ -264,7 +298,9 @@ export class FirestoreSyncService {
     try {
       await setDoc(doc(db, 'audit_logs', log.id), cleanForFirestore(log));
     } catch (e) {
+      reportSyncError();
       console.error('Error saving audit log to Firestore:', e);
+      throw e;
     }
   }
 
@@ -287,7 +323,9 @@ export class FirestoreSyncService {
       };
       await setDoc(sessionDocRef, cleanForFirestore(data));
     } catch (e) {
+      reportSyncError();
       console.error('Error registering active session on Firestore:', e);
+      throw e;
     }
   }
 
@@ -312,6 +350,7 @@ export class FirestoreSyncService {
         }
       },
       (error) => {
+        reportSyncError();
         console.warn('Active session listener warning:', error);
       }
     );
@@ -320,16 +359,16 @@ export class FirestoreSyncService {
   static async clearActiveSession(userId: string, currentSessionToken?: string): Promise<void> {
     try {
       const sessionDocRef = doc(db, 'active_sessions', userId);
-      const snap = await getDoc(sessionDocRef);
-      if (snap.exists()) {
-        const data = snap.data() as ActiveSessionInfo;
-        // Chỉ xóa nếu token khớp với phiên hiện tại đang đăng xuất
-        if (!currentSessionToken || data.sessionToken === currentSessionToken) {
-          await deleteDoc(sessionDocRef);
+      await runTransaction(db, async transaction => {
+        const snap = await transaction.get(sessionDocRef);
+        if (snap.exists() && currentSessionToken && snap.data().sessionToken === currentSessionToken) {
+          transaction.delete(sessionDocRef);
         }
-      }
+      });
     } catch (e) {
+      reportSyncError();
       console.warn('Error clearing active session:', e);
+      throw e;
     }
   }
 
@@ -355,12 +394,12 @@ export class FirestoreSyncService {
 
     try {
       const [teamsSnap, empsSnap, cfgsSnap, attSnap, usersSnap, auditSnap] = await Promise.all([
-        getDocs(collection(db, 'teams')),
-        getDocs(collection(db, 'employees')),
-        getDocs(collection(db, 'configs')),
-        getDocs(collection(db, 'attendance_records')),
-        getDocs(collection(db, 'users')),
-        getDocs(query(collection(db, 'audit_logs'), orderBy('thoiGian', 'desc'), limit(100))),
+        getDocsFromServer(collection(db, 'teams')),
+        getDocsFromServer(collection(db, 'employees')),
+        getDocsFromServer(collection(db, 'configs')),
+        getDocsFromServer(collection(db, 'attendance_records')),
+        getDocsFromServer(collection(db, 'users')),
+        getDocsFromServer(query(collection(db, 'audit_logs'), orderBy('thoiGian', 'desc'), limit(100))),
       ]);
 
       teamsSnap.forEach((d) => result.teams.push(d.data() as DoiNhanVien));
@@ -370,7 +409,9 @@ export class FirestoreSyncService {
       usersSnap.forEach((d) => result.users.push(d.data() as UserAccount));
       auditSnap.forEach((d) => result.auditLogs.push(d.data() as NhatKyThayDoi));
     } catch (e) {
+      reportSyncError();
       console.error('Error during syncAllDataFromCloud:', e);
+      throw e;
     }
 
     return result;
@@ -420,7 +461,9 @@ export class FirestoreSyncService {
         }
       }
     } catch (e) {
+      reportSyncError();
       console.warn('ensureDefaultDataOnCloud notice:', e);
+      throw e;
     }
   }
 }

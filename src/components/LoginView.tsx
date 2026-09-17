@@ -1,145 +1,77 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { UserSession, VaiTroNguoiDung } from '../types';
+import type { UserSession } from '../types';
 import { Logo } from './Logo';
-import { UserAvatar } from './UserAvatar';
-import {
-  ShieldCheck,
-  UserCheck,
-  Users,
-  ArrowRight,
-  Phone,
-  Building2,
-  KeyRound,
-  Info,
-  CheckCircle2,
-  Lock,
-  Eye,
-  EyeOff,
-  Sparkles,
-  User,
-} from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, CalendarDays, Users, Wallet, ExternalLink } from 'lucide-react';
 
-interface LoginViewProps {
-  onLoginSuccess: (user: UserSession) => void;
-}
+export const LoginView: React.FC<{ onLoginSuccess: (user: UserSession) => void }> = ({ onLoginSuccess }) => {
+  const { loginWithCredentials } = useApp();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
-  const { employees, companyInfo, userAccounts, loginWithCredentials } = useApp();
-
-  const [username, setUsername] = useState<string>('');
-  const [password, setPassword] = useState<string>('');
-  const [showPassword, setShowPassword] = useState<boolean>(false);
-  const [errorMsg, setErrorMsg] = useState<string>('');
-  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
-
-  const handleLogin = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const handleLogin = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (isLoggingIn) return;
     setIsLoggingIn(true);
     setErrorMsg('');
-
-    setTimeout(() => {
-      // Check password using credential engine
-      const res = loginWithCredentials(username, password);
-      if (res.success && res.user) {
-        onLoginSuccess(res.user);
-      } else {
-        setErrorMsg(res.message || 'Tài khoản hoặc mật khẩu không chính xác! Vui lòng thử lại.');
-      }
+    try {
+      const result = loginWithCredentials(username, password);
+      if (result.success && result.user) onLoginSuccess(result.user);
+      else setErrorMsg('Tên đăng nhập hoặc mật khẩu chưa đúng. Vui lòng kiểm tra lại.');
+    } catch {
+      setErrorMsg('Chưa thể đăng nhập. Vui lòng thử lại.');
+    } finally {
       setIsLoggingIn(false);
-    }, 200);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-stone-100 flex flex-col justify-center items-center p-3 sm:p-6 select-none font-sans">
-      {/* Main Login Card */}
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl shadow-stone-300/60 border border-stone-200 overflow-hidden">
-        {/* Right Column: Authentication Form */}
-        <div className="p-6 sm:p-8 flex flex-col justify-between space-y-6 bg-white">
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div className="pb-3 border-b border-stone-100">
-              <h2 className="text-lg font-black text-stone-900">
-                Đăng nhập hệ thống
-              </h2>
-              <p className="text-xs text-stone-500">
-                Nhập thông tin tài khoản để truy cập hệ thống
-              </p>
+    <main className="min-h-screen bg-[#f6f5f1] text-stone-900 font-sans">
+      <div className="mx-auto max-w-7xl px-5 sm:px-10 lg:px-16 py-7 sm:py-10">
+        <header className="flex items-center justify-between gap-4">
+          <Logo size={44} />
+          <a href="https://cogava.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm font-semibold text-stone-600 hover:text-orange-700">
+            <span className="hidden sm:inline">Về COGAVA</span><ExternalLink aria-hidden="true" size={16} /><span className="sr-only sm:hidden">Website COGAVA</span>
+          </a>
+        </header>
+        <div className="grid lg:grid-cols-[1.15fr_1fr] gap-10 lg:gap-20 items-center py-8 sm:py-20">
+          <section className="max-w-xl">
+            <p className="text-xs font-bold tracking-[0.2em] uppercase text-orange-700 mb-5">Không gian làm việc COGAVA</p>
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.12]">Rõ từng ngày công.<br /><span className="text-orange-700">Trọn từng thành quả.</span></h1>
+            <p className="hidden lg:block mt-6 text-base sm:text-lg leading-relaxed text-stone-600 max-w-md">Theo dõi đội ngũ, ghi nhận sản lượng và đối chiếu tiền lương trong một không gian làm việc thống nhất.</p>
+            <div className="hidden lg:grid mt-9 grid-cols-3 gap-3 border-t border-stone-300/70 pt-7">
+              {[{ icon: CalendarDays, title: 'Chấm công', text: 'Theo ngày & đội' }, { icon: Users, title: 'Nhân sự', text: 'Quản lý tập trung' }, { icon: Wallet, title: 'Tiền lương', text: 'Theo sản lượng' }].map(({icon: Icon, title, text}) => (
+                <div key={title}><Icon aria-hidden="true" size={22} className="text-orange-700 mb-3" /><p className="text-sm font-bold">{title}</p><p className="mt-1 text-xs text-stone-500">{text}</p></div>
+              ))}
             </div>
-
-            {/* Username Input */}
-            <div className="space-y-1">
-              <label className="block text-[11px] font-bold text-stone-600 uppercase tracking-wider">
-                Tên đăng nhập:
-              </label>
-              <input
-                id="input-login-username"
-                type="text"
-                autoComplete="username"
-                value={username}
-                onChange={e => {
-                  setUsername(e.target.value);
-                  setErrorMsg('');
-                }}
-                placeholder="Nhập tên đăng nhập..."
-                className="w-full pl-4 pr-4 py-2.5 text-sm bg-stone-50 border border-stone-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-orange-500"
-              />
-            </div>
-
-            {/* Password Input */}
-            <div className="space-y-1">
-              <label className="block text-[11px] font-bold text-stone-600 uppercase tracking-wider">
-                Mật khẩu:
-              </label>
-              <div className="relative">
-                <input
-                  id="input-login-password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={e => {
-                    setPassword(e.target.value);
-                    setErrorMsg('');
-                  }}
-                  placeholder="Nhập mật khẩu..."
-                  className="w-full pl-4 pr-10 py-2.5 text-sm bg-stone-50 border border-stone-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-orange-500 font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-3 text-stone-400 hover:text-stone-700 cursor-pointer"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+          </section>
+          <section aria-labelledby="login-heading" className="bg-white rounded-3xl border border-stone-200 p-7 sm:p-10 shadow-[0_16px_60px_-30px_rgba(41,37,36,0.3)]">
+            <span className="inline-flex rounded-full bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-800 mb-6">Cổng nội bộ</span>
+            <h2 id="login-heading" className="text-2xl font-bold tracking-tight">Chào mừng trở lại</h2>
+            <p className="text-sm text-stone-500 mt-2 mb-8">Đăng nhập để bắt đầu ngày làm việc của bạn.</p>
+            <form onSubmit={handleLogin} className="space-y-5" aria-busy={isLoggingIn}>
+              <div>
+                <label htmlFor="input-login-username" className="block text-sm font-semibold mb-2">Tên đăng nhập</label>
+                <input id="input-login-username" name="username" autoComplete="username" required autoCapitalize="none" spellCheck={false} value={username} onChange={event => { setUsername(event.target.value); setErrorMsg(''); }} placeholder="Nhập tên đăng nhập" className="w-full rounded-xl border border-stone-300 bg-stone-50 px-4 py-3 text-base focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-600" />
               </div>
-            </div>
-
-            {errorMsg && (
-              <div className="p-3 bg-rose-50 text-rose-700 text-xs rounded-xl font-semibold border border-rose-200">
-                {errorMsg}
+              <div>
+                <label htmlFor="input-login-password" className="block text-sm font-semibold mb-2">Mật khẩu</label>
+                <div className="relative">
+                  <input id="input-login-password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={event => { setPassword(event.target.value); setErrorMsg(''); }} placeholder="Nhập mật khẩu" className="w-full rounded-xl border border-stone-300 bg-stone-50 pl-4 pr-12 py-3 text-base focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-600" />
+                  <button type="button" aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)} className="absolute right-1 top-1 p-3 text-stone-500 hover:text-stone-900">{showPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button>
+                </div>
               </div>
-            )}
-
-            {/* Submit Button */}
-            <div>
-              <button
-                type="submit"
-                id="btn-submit-login"
-                disabled={isLoggingIn}
-                className="w-full py-3.5 px-4 bg-orange-500 hover:bg-orange-600 active:scale-[0.99] text-white font-black text-sm rounded-xl shadow-lg shadow-orange-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {isLoggingIn ? (
-                  <span className="inline-block animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-                ) : (
-                  <>
-                    <span>Truy cập hệ thống</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
+              {errorMsg && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{errorMsg}</p>}
+              <button id="btn-submit-login" type="submit" disabled={isLoggingIn || !username.trim() || !password} className="w-full rounded-xl bg-orange-700 py-3.5 px-4 font-bold text-white flex items-center justify-center gap-3 hover:bg-orange-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">{isLoggingIn ? 'Đang đăng nhập…' : 'Đăng nhập'}<ArrowRight aria-hidden="true" size={18} /></button>
+            </form>
+            <p className="mt-7 border-t border-stone-100 pt-5 text-sm leading-relaxed text-stone-500">Cần cấp tài khoản hoặc hỗ trợ truy cập? Liên hệ quản trị viên của công ty.</p>
+          </section>
         </div>
+        <footer className="border-t border-stone-200 pt-5 flex flex-wrap justify-between gap-2 text-xs text-stone-500"><span>COGAVA · Hệ thống chấm công & tiền lương</span><span>Dành cho nhân sự được cấp quyền truy cập</span></footer>
       </div>
-    </div>
+    </main>
   );
 };

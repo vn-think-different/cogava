@@ -15,6 +15,7 @@ import {
 } from '../types';
 import { THONG_TIN_CONG_TY, DEFAULT_TEAMS, INITIAL_CONFIGS } from '../data/initialData';
 import { calculateDailyPayroll } from '../utils/payrollEngine';
+import { canManageTeam, isValidDate, validatePayrollNumbers } from '../utils/attendanceValidation';
 import { getDayOfWeekVN } from '../utils/formatters';
 import { PayrollDatabase, DEFAULT_USER_ACCOUNTS } from '../services/payrollDatabase';
 import { FirestoreSyncService } from '../services/firestoreSync';
@@ -44,7 +45,7 @@ interface AppContextType {
   login: (user: UserSession) => void;
   loginWithCredentials: (username: string, password: string) => { success: boolean; message: string; user?: UserSession };
   logout: () => void;
-  
+
   // Quản lý Đội nhóm (Teams)
   addTeam: (data: Omit<DoiNhanVien, 'id' | 'ngayTao'>) => { success: boolean; message: string };
   updateTeam: (id: string, data: Partial<DoiNhanVien>) => { success: boolean; message: string };
@@ -63,16 +64,16 @@ interface AppContextType {
   // Quản lý CSDL bảng lương: CSDL Trắng để kiểm thử & nạp mẫu
   clearAttendanceToBlank: () => { success: boolean; message: string };
   loadSampleExcelAttendance: () => void;
-  
+
   // Nhận diện và chuyển đổi chế độ Máy tính (Desktop) & Điện thoại (Mobile)
   deviceMode: 'auto' | 'desktop' | 'mobile';
   setDeviceMode: (mode: 'auto' | 'desktop' | 'mobile') => void;
   isMobileView: boolean;
-  
+
   // Nghiệp vụ cấu hình theo thời gian
   getConfigForDate: (dateStr: string) => CauHinhLuong;
   addConfig: (data: Omit<CauHinhLuong, 'id' | 'ngayTao' | 'nguoiTao'>) => void;
-  
+
   // Quản lý nhân viên
   addEmployee: (data: Omit<NhanVien, 'id'>) => void;
   updateEmployee: (id: string, data: Partial<NhanVien>) => void;
@@ -145,7 +146,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   // Cloud Synchronization Status
-  const [isCloudSynced, setIsCloudSynced] = useState<boolean>(true);
+  const [isCloudSynced, setIsCloudSynced] = useState<boolean>(false);
   const [isSyncingCloud, setIsSyncingCloud] = useState<boolean>(false);
 
   // Tab State
@@ -187,31 +188,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // 2. Tải dữ liệu mới nhất từ Cloud (Cloud Firestore là nguồn dữ liệu chuẩn)
       const cloudData = await FirestoreSyncService.syncAllDataFromCloud();
 
-      // Teams: Luôn đồng bộ danh sách đội từ Cloud
-      if (cloudData.teams.length > 0) {
-        setTeams(cloudData.teams);
-        PayrollDatabase.saveTeams(cloudData.teams);
-      } else {
-        const localTeams = PayrollDatabase.getTeams();
-        if (localTeams.length > 0) {
-          for (const t of localTeams) {
-            await FirestoreSyncService.saveTeam(t);
-          }
-        }
-      }
-
-      // Employees: Luôn đồng bộ danh sách nhân viên từ Cloud
-      if (cloudData.employees.length > 0) {
-        setEmployees(cloudData.employees);
-        PayrollDatabase.saveEmployees(cloudData.employees);
-      } else {
-        const localEmps = PayrollDatabase.getEmployees();
-        if (localEmps.length > 0) {
-          for (const e of localEmps) {
-            await FirestoreSyncService.saveEmployee(e);
-          }
-        }
-      }
+      // Empty collections are authoritative; never recreate deleted cloud data.
+      setTeams(cloudData.teams);
+      PayrollDatabase.saveTeams(cloudData.teams);
+      setEmployees(cloudData.employees);
+      PayrollDatabase.saveEmployees(cloudData.employees);
 
       if (cloudData.configs.length > 0) {
         setConfigs(cloudData.configs);
@@ -234,6 +215,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setIsCloudSynced(true);
     } catch (err) {
+      setIsCloudSynced(false);
       console.warn('Lỗi khi đồng bộ dữ liệu từ Cloud Firestore:', err);
     } finally {
       setIsSyncingCloud(false);
@@ -242,6 +224,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Initial Cloud Firestore Seeding & Realtime Listeners
   useEffect(() => {
+    const handleSyncError = () => setIsCloudSynced(false);
+    window.addEventListener('cogava:sync-error', handleSyncError);
     // 1. Initial Cloud seed if database collections are empty
     FirestoreSyncService.ensureDefaultDataOnCloud({
       defaultTeams: DEFAULT_TEAMS,
@@ -253,26 +237,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubTeams = FirestoreSyncService.subscribeTeams(cloudTeams => {
       setTeams(cloudTeams);
       PayrollDatabase.saveTeams(cloudTeams);
-      setIsCloudSynced(true);
+
     });
 
     const unsubEmps = FirestoreSyncService.subscribeEmployees(cloudEmps => {
       setEmployees(cloudEmps);
       PayrollDatabase.saveEmployees(cloudEmps);
-      setIsCloudSynced(true);
+
     });
 
     const unsubAtt = FirestoreSyncService.subscribeAttendance(cloudAtt => {
       setAttendanceRecords(cloudAtt);
       PayrollDatabase.saveAttendanceRecords(cloudAtt);
-      setIsCloudSynced(true);
+
     });
 
     const unsubCfg = FirestoreSyncService.subscribeConfigs(cloudCfg => {
       if (cloudCfg.length > 0) {
         setConfigs(cloudCfg);
         PayrollDatabase.saveConfigs(cloudCfg);
-        setIsCloudSynced(true);
+
       }
     });
 
@@ -280,17 +264,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (cloudUsers.length > 0) {
         setUserAccounts(cloudUsers);
         PayrollDatabase.saveUserAccounts(cloudUsers);
-        setIsCloudSynced(true);
+
       }
     });
 
     const unsubAudit = FirestoreSyncService.subscribeAuditLogs(cloudLogs => {
       setAuditLogs(cloudLogs);
       PayrollDatabase.saveAuditLogs(cloudLogs.slice(0, 100));
-      setIsCloudSynced(true);
+
     });
 
     return () => {
+      window.removeEventListener('cogava:sync-error', handleSyncError);
       unsubTeams();
       unsubEmps();
       unsubAtt();
@@ -412,7 +397,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       avatar: account.avatar,
     };
 
-    login(session);
     return {
       success: true,
       message: `Đăng nhập thành công! Chào mừng ${account.tenHienThi}.`,
@@ -638,7 +622,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     userId: string,
     newPassword = '123456'
   ): { success: boolean; message: string } => {
-    if (currentUser.vaiTro !== 'ADMIN') {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') {
       return { success: false, message: 'Chỉ Quản trị viên mới có quyền đặt lại mật khẩu!' };
     }
     const result = PayrollDatabase.adminResetPassword(userId, newPassword);
@@ -661,7 +645,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addUserAccount = (
     data: Omit<UserAccount, 'id' | 'ngayTao'>
   ): { success: boolean; message: string } => {
-    if (currentUser.vaiTro !== 'ADMIN') {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') {
       return { success: false, message: 'Chỉ Quản trị viên mới có quyền tạo tài khoản người dùng!' };
     }
     const result = PayrollDatabase.addUserAccount(data);
@@ -684,7 +668,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     vaiTro: VaiTroNguoiDung,
     doiId?: string
   ): { success: boolean; message: string } => {
-    if (currentUser.vaiTro !== 'ADMIN') {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') {
       return { success: false, message: 'Chỉ Quản trị viên mới có quyền thay đổi phân quyền và phân đội!' };
     }
 
@@ -800,7 +784,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Admin xóa tài khoản
   const deleteUserAccount = (userId: string): { success: boolean; message: string } => {
-    if (currentUser.vaiTro !== 'ADMIN') {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') {
       return { success: false, message: 'Chỉ Quản trị viên mới có quyền xóa tài khoản!' };
     }
     const target = userAccounts.find(u => u.id === userId);
@@ -834,6 +818,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Nạp lại dữ liệu mẫu Excel 28 ngày
   const loadSampleExcelAttendance = () => {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return;
     const sampleRecords = PayrollDatabase.loadSampleExcelAttendance();
     setAttendanceRecords(sampleRecords);
     FirestoreSyncService.batchSaveAttendance(sampleRecords).catch(e => console.warn('Cloud load sample attendance:', e));
@@ -859,6 +844,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Thêm cấu hình mới
   const addConfig = (data: Omit<CauHinhLuong, 'id' | 'ngayTao' | 'nguoiTao'>) => {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return;
     const now = new Date();
     const dateStr = now.toISOString().replace('T', ' ').substring(0, 19);
     const newConfig: CauHinhLuong = {
@@ -882,7 +868,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Quản lý Đội nhóm (Teams)
   const addTeam = (data: Omit<DoiNhanVien, 'id' | 'ngayTao'>): { success: boolean; message: string } => {
-    if (currentUser.vaiTro !== 'ADMIN') {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') {
       return { success: false, message: 'Chỉ Quản trị viên mới có quyền tạo Đội mới!' };
     }
     const res = PayrollDatabase.addTeam(data);
@@ -917,7 +903,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateTeam = (id: string, data: Partial<DoiNhanVien>): { success: boolean; message: string } => {
-    if (currentUser.vaiTro !== 'ADMIN') {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') {
       return { success: false, message: 'Chỉ Quản trị viên mới có quyền sửa thông tin Đội!' };
     }
     const res = PayrollDatabase.updateTeam(id, data);
@@ -963,7 +949,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteTeam = (id: string): { success: boolean; message: string } => {
-    if (currentUser.vaiTro !== 'ADMIN') {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') {
       return { success: false, message: 'Chỉ Quản trị viên mới có quyền xóa Đội!' };
     }
     const targetTeam = teams.find(t => t.id === id);
@@ -995,6 +981,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const assignEmployeeToTeam = (empId: string, teamId: string) => {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return;
     setEmployees(prev => {
       const updated = prev.map(emp => (emp.id === empId ? { ...emp, doiId: teamId } : emp));
       PayrollDatabase.saveEmployees(updated);
@@ -1021,6 +1008,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Quản lý nhân viên
   const addEmployee = (data: Omit<NhanVien, 'id'>) => {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return;
     const newId = `emp-${Date.now()}`;
     const assignedTeam = data.doiId || (teams[0]?.id || 'doi-1');
     const newEmp: NhanVien = {
@@ -1074,6 +1062,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateEmployee = (id: string, data: Partial<NhanVien>) => {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return;
     const currentEmp = employees.find(e => e.id === id);
     if (!currentEmp) return;
 
@@ -1133,6 +1122,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteEmployee = (id: string): { success: boolean; message: string } => {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return { success: false, message: 'Chỉ quản trị viên được thực hiện thao tác này.' };
     const currentEmp = employees.find(e => e.id === id);
     if (!currentEmp) {
       return { success: false, message: 'Không tìm thấy nhân viên!' };
@@ -1191,6 +1181,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const appointCaptain = (teamId: string, empId: string): { success: boolean; message: string } => {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return { success: false, message: 'Chỉ quản trị viên được thực hiện thao tác này.' };
     const team = teams.find(t => t.id === teamId) || PayrollDatabase.getTeams().find(t => t.id === teamId);
     const emp = employees.find(e => e.id === empId) || PayrollDatabase.getEmployees().find(e => e.id === empId);
 
@@ -1249,6 +1240,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleEmployeeStatus = (id: string) => {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return;
     const currentEmp = employees.find(e => e.id === id);
     if (!currentEmp) return;
 
@@ -1289,6 +1281,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Khoá sổ tháng
   const lockMonth = (yearMonth: string) => {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(yearMonth)) return;
     setAttendanceRecords(prev => {
       const updated: BangChamCongNgay[] = prev.map(rec =>
         rec.ngay.startsWith(yearMonth) ? { ...rec, trangThai: 'DA_CHOT' as TrangThaiChamCong } : rec
@@ -1310,6 +1303,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Mở lại sổ tháng (chỉ Admin)
   const unlockMonth = (yearMonth: string, lyDo: string) => {
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN' || !lyDo.trim() || !/^\d{4}-(0[1-9]|1[0-2])$/.test(yearMonth)) return;
     setAttendanceRecords(prev => {
       const updated: BangChamCongNgay[] = prev.map(rec =>
         rec.ngay.startsWith(yearMonth) ? { ...rec, trangThai: 'NHAP' as TrangThaiChamCong } : rec
@@ -1334,17 +1328,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const { ngay, doiId, soGa, donGia, ghiChuDonGia, presentEmployeeIds } = input;
     const targetDoiId = doiId || currentUser.doiId || 'doi-1';
 
-    // Kiểm tra khoá sổ
+    if (!isAuthenticated || !canManageTeam(currentUser, targetDoiId)) {
+      return { success: false, message: 'Bạn không có quyền chấm công cho đội này.' };
+    }
+    if (!isValidDate(ngay)) return { success: false, message: 'Ngày chấm công không hợp lệ.' };
+    const inputError = validatePayrollNumbers(soGa, donGia, getConfigForDate(ngay).tyLePhuChinh);
+    if (inputError) return { success: false, message: inputError };
+    if (new Set(presentEmployeeIds).size !== presentEmployeeIds.length || presentEmployeeIds.some(id =>
+      !employees.some(e => e.id === id && (e.doiId === targetDoiId || (!e.doiId && targetDoiId === 'doi-1'))))) {
+      return { success: false, message: 'Danh sách chấm công có nhân viên trùng lặp hoặc không thuộc đội.' };
+    }
     const existing = attendanceRecords.find(
       r => r.ngay === ngay && (r.doiId === targetDoiId || (!r.doiId && targetDoiId === 'doi-1'))
     );
-    if (existing && existing.trangThai === 'DA_CHOT') {
-      if (currentUser.vaiTro !== 'ADMIN') {
-        return {
-          success: false,
-          message: 'Ngày này đã được khoá sổ (chốt lương). Chỉ Quản trị viên mới có quyền can thiệp!',
-        };
-      }
+    if (existing?.trangThai === 'DA_CHOT' || isMonthLocked(ngay.slice(0, 7))) {
+      return { success: false, message: 'Tháng hoặc ngày đã chốt. Quản trị viên phải mở lại sổ và ghi lý do trước khi sửa.' };
     }
 
     // Chỉ nhân viên thuộc đội mới được đưa vào tính toán công thức ngày
@@ -1441,7 +1439,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const target = attendanceRecords.find(r => r.id === id);
     if (!target) return;
 
-    if (target.trangThai === 'DA_CHOT' && currentUser.vaiTro !== 'ADMIN') {
+    if (!isAuthenticated || !canManageTeam(currentUser, target.doiId || 'doi-1')) return;
+    if (target.trangThai === 'DA_CHOT') {
       alert('Không thể xoá bản ghi đã chốt sổ!');
       return;
     }
@@ -1464,8 +1463,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const resetToSampleData = () => {
-    localStorage.clear();
-    sessionStorage.clear();
+    if (!isAuthenticated || currentUser.vaiTro !== 'ADMIN') return;
+    for (const storage of [localStorage, sessionStorage]) {
+      Object.keys(storage).filter(key => key.startsWith('cogava_')).forEach(key => storage.removeItem(key));
+    }
     window.location.reload();
   };
 

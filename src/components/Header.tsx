@@ -62,6 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
     setDeviceMode,
     isMobileView,
     isSyncingCloud,
+    isCloudSynced,
     syncFromCloud,
   } = useApp();
 
@@ -224,9 +225,9 @@ export const Header: React.FC<HeaderProps> = ({
               {isSyncingCloud ? (
                 <RotateCcw className="w-3 h-3 text-emerald-400 animate-spin" />
               ) : (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className={`w-1.5 h-1.5 rounded-full ${isCloudSynced ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
               )}
-              <span className="hidden sm:inline">{isSyncingCloud ? 'Đang đồng bộ Cloud...' : 'Cloud Firestore đã kết nối'}</span>
+              <span className="hidden sm:inline">{isSyncingCloud ? 'Đang đồng bộ Cloud...' : isCloudSynced ? 'Đã tải dữ liệu Cloud' : 'Chưa xác nhận đồng bộ'}</span>
             </button>
           </div>
 

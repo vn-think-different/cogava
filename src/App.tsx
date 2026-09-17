@@ -1,13 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, lazy, Suspense } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Header, NavTab } from './components/Header';
-import { DashboardView } from './components/DashboardView';
-import { DailyAttendanceView } from './components/DailyAttendanceView';
-import { MonthlyPayrollView } from './components/MonthlyPayrollView';
-import { EmployeeManagementView } from './components/EmployeeManagementView';
-import { ConfigView } from './components/ConfigView';
-import { AuditLogView } from './components/AuditLogView';
-import { EmployeePortalView } from './components/EmployeePortalView';
+const DashboardView = lazy(() => import('./components/DashboardView').then(module => ({ default: module.DashboardView })));
+const DailyAttendanceView = lazy(() => import('./components/DailyAttendanceView').then(module => ({ default: module.DailyAttendanceView })));
+const MonthlyPayrollView = lazy(() => import('./components/MonthlyPayrollView').then(module => ({ default: module.MonthlyPayrollView })));
+const EmployeeManagementView = lazy(() => import('./components/EmployeeManagementView').then(module => ({ default: module.EmployeeManagementView })));
+const ConfigView = lazy(() => import('./components/ConfigView').then(module => ({ default: module.ConfigView })));
+const AuditLogView = lazy(() => import('./components/AuditLogView').then(module => ({ default: module.AuditLogView })));
+const EmployeePortalView = lazy(() => import('./components/EmployeePortalView').then(module => ({ default: module.EmployeePortalView })));
 import { LoginView } from './components/LoginView';
 import { Logo } from './components/Logo';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -107,7 +107,8 @@ const MainAppContent: React.FC = () => {
       )}
 
       {/* Main Content Area (extra pb on mobile to clear bottom nav) */}
-      <main className={`flex-1 ${isMobileView ? 'pb-24' : 'pb-8'}`}>
+      <main id="main-content" className={`flex-1 ${isMobileView ? 'pb-24' : 'pb-8'}`}>
+        <Suspense fallback={<div role="status" className="mx-auto max-w-7xl p-8 text-sm text-stone-600">Đang tải nội dung…</div>}>
         {currentTab === 'portal' && <EmployeePortalView />}
         {currentTab === 'dashboard' && <DashboardView onNavigate={(tab: string) => setActiveTab(tab)} />}
         {currentTab === 'daily' && <DailyAttendanceView />}
@@ -115,6 +116,7 @@ const MainAppContent: React.FC = () => {
         {currentTab === 'employees' && <EmployeeManagementView />}
         {currentTab === 'config' && <ConfigView />}
         {currentTab === 'audit' && <AuditLogView />}
+        </Suspense>
       </main>
 
       {/* Footer - Formal Company Legal Details from Specs (Section 0) */}
@@ -131,7 +133,7 @@ const MainAppContent: React.FC = () => {
               </div>
               <p className="text-stone-400 text-[11px] leading-relaxed">
                 Hệ thống Quản lý Chấm công & Tự động Phân bổ Lương Đội Bắt Gà COGAVA.
-                Đảm bảo tính chính xác 100%, bảo vệ lịch sử lương và khoá sổ an toàn.
+                Hỗ trợ đối chiếu ngày công, theo dõi sản lượng và tổng hợp tiền lương.
               </p>
               <div className="text-[11px] font-mono text-stone-400">
                 <span>Mã số thuế: </span>

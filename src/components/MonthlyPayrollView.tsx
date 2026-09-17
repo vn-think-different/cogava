@@ -1,3 +1,4 @@
+import { csvRow } from '../utils/csv';
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { NhanVien } from '../types';
@@ -237,11 +238,11 @@ export const MonthlyPayrollView: React.FC = () => {
     let csvContent = '\uFEFF'; // UTF-8 BOM for Excel Vietnamese compatibility
     if (isEmployee && loggedInEmployee) {
       csvContent += `PHIẾU LƯƠNG CÁ NHÂN - CÔNG TY TNHH COGAVA\n`;
-      csvContent += `Nhân viên: ${loggedInEmployee.hoTen} (${loggedInEmployee.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'})\n`;
+      csvContent += csvRow([`Nhân viên: ${loggedInEmployee.hoTen} (${loggedInEmployee.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'})`]);
       csvContent += `Kỳ lương: Tháng ${month}/${year}\n`;
       csvContent += `STT,Họ và tên,Vai trò,Số ngày công,Tỷ lệ công (%),Tổng lương thực nhận (VNĐ),Lương TB/ngày (VNĐ),Số tài khoản,Ngân hàng thụ hưởng\n`;
       employeeSummaries.forEach((row, idx) => {
-        csvContent += `${idx + 1},"${row.employee.hoTen}","${row.employee.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'}",${row.daysCount},${row.workRatio.toFixed(1)}%,${row.totalSalary},${row.avgWagePerDay},"${row.employee.stkNganHang || ''}","${row.employee.tenNganHang || ''}"\n`;
+        csvContent += csvRow([idx + 1, row.employee.hoTen, row.employee.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ', row.daysCount, row.workRatio.toFixed(1) + '%', row.totalSalary, row.avgWagePerDay, row.employee.stkNganHang || '', row.employee.tenNganHang || '']);
       });
     } else {
       csvContent += `BẢNG TỔNG HỢP LƯƠNG ĐỘI BẮT GÀ - CÔNG TY TNHH COGAVA\n`;
@@ -253,7 +254,7 @@ export const MonthlyPayrollView: React.FC = () => {
 
       // Rows
       employeeSummaries.forEach((row, idx) => {
-        csvContent += `${idx + 1},"${row.employee.hoTen}","${row.employee.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ'}",${row.daysCount},${row.workRatio.toFixed(1)}%,${row.totalSalary},${row.avgWagePerDay},"${row.employee.stkNganHang || ''}","${row.employee.tenNganHang || ''}"\n`;
+        csvContent += csvRow([idx + 1, row.employee.hoTen, row.employee.vaiTro === 'CHINH' ? 'Lương chính' : 'Lương phụ', row.daysCount, row.workRatio.toFixed(1) + '%', row.totalSalary, row.avgWagePerDay, row.employee.stkNganHang || '', row.employee.tenNganHang || '']);
       });
 
       csvContent += `\nTỔNG CỘNG,,,"${monthlyMetrics.totalShifts}",,${sumEmployeeSalaries},,,\n`;
@@ -267,6 +268,7 @@ export const MonthlyPayrollView: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   // Quick copy bank account

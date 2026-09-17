@@ -122,41 +122,11 @@ export class PayrollDatabase {
       }
     }
 
-    let modified = false;
-    // Khởi tạo tài khoản 'thach' nếu chưa có trong CSDL (chỉ lần đầu)
-    const thachIndex = accounts.findIndex(a => a.username.toLowerCase() === 'thach');
-    if (thachIndex === -1) {
-      accounts.unshift({
-        id: 'usr-thach',
-        username: 'thach',
-        password: '123456',
-        tenHienThi: 'Thạch',
-        vaiTro: 'ADMIN',
-        avatar: 'preset-admin',
-        ngayTao: '2026-01-01 08:00:00',
-      });
-      modified = true;
-    }
-
-    // Khởi tạo tài khoản 'admin' nếu chưa có trong CSDL (chỉ lần đầu)
-    const adminIndex = accounts.findIndex(a => a.username.toLowerCase() === 'admin');
-    if (adminIndex === -1) {
-      accounts.push({
-        id: 'usr-admin',
-        username: 'admin',
-        password: 'Langbat136@',
-        tenHienThi: 'Admin',
-        vaiTro: 'ADMIN',
-        avatar: 'preset-admin',
-        ngayTao: '2026-01-01 08:00:00',
-      });
-      modified = true;
-    }
-
-    if (modified || accounts.length === 0) {
-      this.saveUserAccounts(accounts);
-    }
-    return accounts;
+    // Only seed a new browser store; preserve explicit deletions, including [].
+    if (saved !== null) return accounts;
+    const initial = DEFAULT_USER_ACCOUNTS.map(account => ({ ...account }));
+    this.saveUserAccounts(initial);
+    return initial;
   }
 
   static saveUserAccounts(users: UserAccount[]): void {

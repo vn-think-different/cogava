@@ -1,4 +1,5 @@
 import { PayrollCalculationInput, PayrollCalculationResult, VaiTroNhanVien } from '../types';
+import { validatePayrollNumbers } from './attendanceValidation';
 
 /**
  * Thuật toán tính lương sản lượng theo ngày của COGAVA (Mục 4 - Tài liệu đặc tả)
@@ -17,6 +18,14 @@ import { PayrollCalculationInput, PayrollCalculationResult, VaiTroNhanVien } fro
  */
 export function calculateDailyPayroll(input: PayrollCalculationInput): PayrollCalculationResult {
   const { soGa, donGia, tyLePhuChinh, employees } = input;
+  const inputError = validatePayrollNumbers(soGa, donGia, tyLePhuChinh);
+  if (inputError) throw new RangeError(inputError);
+  if (new Set(employees.map(e => e.id)).size !== employees.length) {
+    throw new Error('Danh sách nhân viên có mã trùng lặp.');
+  }
+  if (employees.some(e => !e.id || !['CHINH', 'PHU'].includes(e.vaiTro))) {
+    throw new Error('Nhân viên có mã hoặc vai trò không hợp lệ.');
+  }
   
   const tongLuongNgay = Math.max(0, Math.round(soGa * donGia));
 
@@ -32,9 +41,9 @@ export function calculateDailyPayroll(input: PayrollCalculationInput): PayrollCa
   if (soNguoiDiLam === 0 || tongLuongNgay === 0) {
     return {
       tongLuongNgay,
-      soChinhDiLam: 0,
-      soPhuDiLam: 0,
-      soNguoiDiLam: 0,
+      soChinhDiLam,
+      soPhuDiLam,
+      soNguoiDiLam,
       luongTrungBinhMoiNguoi: 0,
       luong1Phu: 0,
       luong1Chinh: 0,
@@ -47,9 +56,9 @@ export function calculateDailyPayroll(input: PayrollCalculationInput): PayrollCa
         luongNhanDuoc: 0,
         duocCongPhanDu: false,
       })),
-      kiemTraHopLe: true,
+      kiemTraHopLe: tongLuongNgay === 0,
       tongLuongThucChia: 0,
-      chenhLech: 0,
+      chenhLech: -tongLuongNgay,
     };
   }
 
@@ -81,6 +90,10 @@ export function calculateDailyPayroll(input: PayrollCalculationInput): PayrollCa
     // Lương 1 Phụ = Lương TB * tỷ lệ phụ/chính
     // Làm tròn lương 1 Phụ đến đơn vị đồng
     luong1PhuChuan = Math.round(luongTrungBinhMoiNguoi * tyLePhuChinh);
+    // Rounding a very small fund across many assistants must never overdraw it.
+    if (soPhuDiLam > 0) {
+      luong1PhuChuan = Math.min(luong1PhuChuan, Math.floor(tongLuongNgay / soPhuDiLam));
+    }
 
     // Gán lương cho từng Phụ có mặt
     presentPhu.forEach(p => {
