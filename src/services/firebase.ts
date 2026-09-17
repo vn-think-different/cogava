@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, Firestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase App
@@ -12,9 +12,17 @@ const app = getApps().length > 0 ? getApp() : initializeApp({
   messagingSenderId: firebaseConfig.messagingSenderId,
 });
 
-// Initialize Cloud Firestore with specified databaseId if available
-export const db: Firestore = firebaseConfig.firestoreDatabaseId
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
+// Initialize Cloud Firestore with ignoreUndefinedProperties to prevent undefined field errors
+let firestoreDb: Firestore;
+try {
+  firestoreDb = initializeFirestore(app, {
+    ignoreUndefinedProperties: true,
+  }, firebaseConfig.firestoreDatabaseId || '(default)');
+} catch {
+  firestoreDb = firebaseConfig.firestoreDatabaseId
+    ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+    : getFirestore(app);
+}
 
+export const db: Firestore = firestoreDb;
 export default app;

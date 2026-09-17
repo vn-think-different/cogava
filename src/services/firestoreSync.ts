@@ -29,6 +29,29 @@ export interface ActiveSessionInfo {
   userAgent?: string;
 }
 
+/**
+ * Loại bỏ các trường undefined đệ quy trước khi ghi vào Firestore
+ * Ngăn chặn hoàn toàn lỗi: "Unsupported field value: undefined"
+ */
+export function cleanForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return null as unknown as T;
+  }
+  if (Array.isArray(data)) {
+    return data.map(item => cleanForFirestore(item)) as unknown as T;
+  }
+  if (typeof data === 'object' && !(data instanceof Date)) {
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanForFirestore(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return data;
+}
+
 export class FirestoreSyncService {
   // ==========================================
   // 1. TEAMS (Đội nhóm)
@@ -50,7 +73,7 @@ export class FirestoreSyncService {
 
   static async saveTeam(team: DoiNhanVien) {
     try {
-      await setDoc(doc(db, 'teams', team.id), team);
+      await setDoc(doc(db, 'teams', team.id), cleanForFirestore(team));
     } catch (e) {
       console.error('Error saving team to Firestore:', e);
     }
@@ -84,7 +107,7 @@ export class FirestoreSyncService {
 
   static async saveEmployee(emp: NhanVien) {
     try {
-      await setDoc(doc(db, 'employees', emp.id), emp);
+      await setDoc(doc(db, 'employees', emp.id), cleanForFirestore(emp));
     } catch (e) {
       console.error('Error saving employee to Firestore:', e);
     }
@@ -118,7 +141,7 @@ export class FirestoreSyncService {
 
   static async saveAttendanceRecord(record: BangChamCongNgay) {
     try {
-      await setDoc(doc(db, 'attendance_records', record.id), record);
+      await setDoc(doc(db, 'attendance_records', record.id), cleanForFirestore(record));
     } catch (e) {
       console.error('Error saving attendance record to Firestore:', e);
     }
@@ -136,6 +159,7 @@ export class FirestoreSyncService {
     try {
       const colRef = collection(db, 'attendance_records');
       const snap = await getDocs(colRef);
+      if (snap.empty) return;
       const batch = writeBatch(db);
       snap.forEach((d) => batch.delete(d.ref));
       await batch.commit();
@@ -148,7 +172,7 @@ export class FirestoreSyncService {
     try {
       const batch = writeBatch(db);
       for (const rec of records) {
-        batch.set(doc(db, 'attendance_records', rec.id), rec);
+        batch.set(doc(db, 'attendance_records', rec.id), cleanForFirestore(rec));
       }
       await batch.commit();
     } catch (e) {
@@ -178,7 +202,7 @@ export class FirestoreSyncService {
 
   static async saveConfig(cfg: CauHinhLuong) {
     try {
-      await setDoc(doc(db, 'configs', cfg.id), cfg);
+      await setDoc(doc(db, 'configs', cfg.id), cleanForFirestore(cfg));
     } catch (e) {
       console.error('Error saving config to Firestore:', e);
     }
@@ -204,7 +228,7 @@ export class FirestoreSyncService {
 
   static async saveUser(user: UserAccount) {
     try {
-      await setDoc(doc(db, 'users', user.id), user);
+      await setDoc(doc(db, 'users', user.id), cleanForFirestore(user));
     } catch (e) {
       console.error('Error saving user to Firestore:', e);
     }
@@ -238,7 +262,7 @@ export class FirestoreSyncService {
 
   static async saveAuditLog(log: NhatKyThayDoi) {
     try {
-      await setDoc(doc(db, 'audit_logs', log.id), log);
+      await setDoc(doc(db, 'audit_logs', log.id), cleanForFirestore(log));
     } catch (e) {
       console.error('Error saving audit log to Firestore:', e);
     }
@@ -261,7 +285,7 @@ export class FirestoreSyncService {
         deviceName: deviceName || (typeof navigator !== 'undefined' ? (navigator.userAgent.includes('Mobile') ? 'Điện thoại di động' : 'Máy tính / Trình duyệt') : 'Thiết bị khác'),
         userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
       };
-      await setDoc(sessionDocRef, data);
+      await setDoc(sessionDocRef, cleanForFirestore(data));
     } catch (e) {
       console.error('Error registering active session on Firestore:', e);
     }
@@ -369,13 +393,13 @@ export class FirestoreSyncService {
         // Hệ thống lần đầu tiên khởi tạo trên Cloud
         if (usersSnap.empty) {
           for (const u of params.defaultUsers) {
-            await setDoc(doc(db, 'users', u.id), u);
+            await setDoc(doc(db, 'users', u.id), cleanForFirestore(u));
           }
         }
         const configsSnap = await getDocs(collection(db, 'configs'));
         if (configsSnap.empty) {
           for (const c of params.defaultConfigs) {
-            await setDoc(doc(db, 'configs', c.id), c);
+            await setDoc(doc(db, 'configs', c.id), cleanForFirestore(c));
           }
         }
         // Đánh dấu hệ thống đã khởi tạo hoàn tất
@@ -391,7 +415,7 @@ export class FirestoreSyncService {
         if (usersSnap.empty) {
           const defaultAdmin = params.defaultUsers.find(u => u.username === 'admin') || params.defaultUsers[0];
           if (defaultAdmin) {
-            await setDoc(doc(db, 'users', defaultAdmin.id), defaultAdmin);
+            await setDoc(doc(db, 'users', defaultAdmin.id), cleanForFirestore(defaultAdmin));
           }
         }
       }

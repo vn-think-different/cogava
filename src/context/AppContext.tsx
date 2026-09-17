@@ -187,13 +187,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // 2. Tải dữ liệu mới nhất từ Cloud (Cloud Firestore là nguồn dữ liệu chuẩn)
       const cloudData = await FirestoreSyncService.syncAllDataFromCloud();
 
-      // Teams: Luôn đồng bộ danh sách đội từ Cloud (nếu Cloud trống thì cập nhật rỗng)
-      setTeams(cloudData.teams);
-      PayrollDatabase.saveTeams(cloudData.teams);
+      // Teams: Luôn đồng bộ danh sách đội từ Cloud
+      if (cloudData.teams.length > 0) {
+        setTeams(cloudData.teams);
+        PayrollDatabase.saveTeams(cloudData.teams);
+      } else {
+        const localTeams = PayrollDatabase.getTeams();
+        if (localTeams.length > 0) {
+          for (const t of localTeams) {
+            await FirestoreSyncService.saveTeam(t);
+          }
+        }
+      }
 
       // Employees: Luôn đồng bộ danh sách nhân viên từ Cloud
-      setEmployees(cloudData.employees);
-      PayrollDatabase.saveEmployees(cloudData.employees);
+      if (cloudData.employees.length > 0) {
+        setEmployees(cloudData.employees);
+        PayrollDatabase.saveEmployees(cloudData.employees);
+      } else {
+        const localEmps = PayrollDatabase.getEmployees();
+        if (localEmps.length > 0) {
+          for (const e of localEmps) {
+            await FirestoreSyncService.saveEmployee(e);
+          }
+        }
+      }
 
       if (cloudData.configs.length > 0) {
         setConfigs(cloudData.configs);
@@ -205,16 +223,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         PayrollDatabase.saveUserAccounts(cloudData.users);
       }
 
-      if (cloudData.attendanceRecords.length > 0) {
-        setAttendanceRecords(cloudData.attendanceRecords);
-        PayrollDatabase.saveAttendanceRecords(cloudData.attendanceRecords);
-      } else {
-        // Nếu Cloud chưa có bản ghi nào nhưng máy cục bộ có -> Đẩy lên Cloud bảo lưu
-        const localAtt = PayrollDatabase.getAttendanceRecords();
-        if (localAtt.length > 0) {
-          await FirestoreSyncService.batchSaveAttendance(localAtt);
-        }
-      }
+      // Attendance records: Đồng bộ danh sách chấm công từ Cloud
+      setAttendanceRecords(cloudData.attendanceRecords);
+      PayrollDatabase.saveAttendanceRecords(cloudData.attendanceRecords);
 
       if (cloudData.auditLogs.length > 0) {
         setAuditLogs(cloudData.auditLogs);
@@ -238,7 +249,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       defaultConfigs: INITIAL_CONFIGS,
     }).catch(err => console.warn('Firestore initial sync notice:', err));
 
-    // 2. Real-time Subscriptions with Firestore (Luôn cập nhật ngay cả khi danh sách trở về rỗng do Quản trị viên xóa)
+    // 2. Real-time Subscriptions with Firestore
     const unsubTeams = FirestoreSyncService.subscribeTeams(cloudTeams => {
       setTeams(cloudTeams);
       PayrollDatabase.saveTeams(cloudTeams);
@@ -252,16 +263,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const unsubAtt = FirestoreSyncService.subscribeAttendance(cloudAtt => {
-      if (cloudAtt.length > 0) {
-        setAttendanceRecords(cloudAtt);
-        PayrollDatabase.saveAttendanceRecords(cloudAtt);
-        setIsCloudSynced(true);
-      } else {
-        const localAtt = PayrollDatabase.getAttendanceRecords();
-        if (localAtt.length > 0) {
-          FirestoreSyncService.batchSaveAttendance(localAtt).catch(e => console.warn(e));
-        }
-      }
+      setAttendanceRecords(cloudAtt);
+      PayrollDatabase.saveAttendanceRecords(cloudAtt);
+      setIsCloudSynced(true);
     });
 
     const unsubCfg = FirestoreSyncService.subscribeConfigs(cloudCfg => {
@@ -883,15 +887,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     const res = PayrollDatabase.addTeam(data);
     if (res.success && res.team) {
-      const newTeamId = res.team.id;
-      setTeams(PayrollDatabase.getTeams());
-      FirestoreSyncService.saveTeam(res.team).catch(e => console.warn('Cloud team save:', e));
+      const newTeam = res.team;
+      const newTeamId = newTeam.id;
+      setTeams(prev => {
+        const updated = [...prev, newTeam];
+        PayrollDatabase.saveTeams(updated);
+        return updated;
+      });
+      FirestoreSyncService.saveTeam(newTeam).catch(e => console.warn('Cloud team save:', e));
       createAuditLog('DoiNhanVien', newTeamId, 'TAO', `Tạo đội mới: "${data.tenDoi}"`);
 
       // Nếu có chỉ định Đội trưởng ngay khi tạo đội (bằng tên hoặc ID)
       if (data.doiTruongTen) {
-        const allEmps = PayrollDatabase.getEmployees();
-        const emp = allEmps.find(
+        const emp = employees.find(
+          e =>
+            (data.doiTruongUserId && e.id === data.doiTruongUserId) ||
+            e.hoTen.trim().toLowerCase() === data.doiTruongTen!.trim().toLowerCase()
+        ) || PayrollDatabase.getEmployees().find(
           e =>
             (data.doiTruongUserId && e.id === data.doiTruongUserId) ||
             e.hoTen.trim().toLowerCase() === data.doiTruongTen!.trim().toLowerCase()
@@ -910,9 +922,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     const res = PayrollDatabase.updateTeam(id, data);
     if (res.success) {
-      setTeams(PayrollDatabase.getTeams());
-      const updatedTeam = PayrollDatabase.getTeams().find(t => t.id === id);
-      if (updatedTeam) FirestoreSyncService.saveTeam(updatedTeam).catch(e => console.warn('Cloud team update:', e));
+      setTeams(prev => {
+        const updated = prev.map(t => (t.id === id ? { ...t, ...data } : t));
+        PayrollDatabase.saveTeams(updated);
+        const updatedTeam = updated.find(t => t.id === id);
+        if (updatedTeam) FirestoreSyncService.saveTeam(updatedTeam).catch(e => console.warn('Cloud team update:', e));
+        return updated;
+      });
       createAuditLog('DoiNhanVien', id, 'SUA', `Cập nhật thông tin đội ${id}`);
 
       // Nếu đổi đội trưởng, đồng bộ nhân viên và tài khoản mà KHÔNG gọi lại updateTeam
@@ -929,7 +945,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             FirestoreSyncService.saveEmployee({ ...emp, doiId: id }).catch(e => console.warn('Cloud emp update:', e));
             return updated;
           });
-          const userAcc = userAccounts.find(u => u.nhanVienId === emp.id || u.username === emp.soDienThoai);
+          const userAcc = userAccounts.find(u => u.nhanVienId === emp.id || u.username === emp.sdt);
           if (userAcc) {
             setUserAccounts(prev => {
               const updated = prev.map(u =>
@@ -1175,47 +1191,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const appointCaptain = (teamId: string, empId: string): { success: boolean; message: string } => {
-    const allTeams = PayrollDatabase.getTeams();
-    const allEmployees = PayrollDatabase.getEmployees();
-    const allUsers = PayrollDatabase.getUserAccounts();
-
-    const team = allTeams.find(t => t.id === teamId) || teams.find(t => t.id === teamId);
-    const emp = allEmployees.find(e => e.id === empId) || employees.find(e => e.id === empId);
+    const team = teams.find(t => t.id === teamId) || PayrollDatabase.getTeams().find(t => t.id === teamId);
+    const emp = employees.find(e => e.id === empId) || PayrollDatabase.getEmployees().find(e => e.id === empId);
 
     if (!team) return { success: false, message: 'Không tìm thấy đội!' };
     if (!emp) return { success: false, message: 'Không tìm thấy nhân viên!' };
 
     // Tìm tài khoản người dùng của nhân viên
-    const userAcc = allUsers.find(u => u.nhanVienId === empId || u.username === emp.soDienThoai);
+    const userAcc = userAccounts.find(u => u.nhanVienId === empId || u.username === emp.sdt);
 
     // 1. Cập nhật đội trong CSDL & State
-    PayrollDatabase.updateTeam(teamId, {
+    const teamUpdateData: Partial<DoiNhanVien> = {
       doiTruongUserId: userAcc?.id || emp.id,
       doiTruongTen: emp.hoTen,
+    };
+    PayrollDatabase.updateTeam(teamId, teamUpdateData);
+    setTeams(prev => {
+      const updated = prev.map(t => (t.id === teamId ? { ...t, ...teamUpdateData } : t));
+      const foundTeam = updated.find(t => t.id === teamId);
+      if (foundTeam) FirestoreSyncService.saveTeam(foundTeam).catch(e => console.warn('Cloud team update:', e));
+      return updated;
     });
-    const updatedTeamList = PayrollDatabase.getTeams();
-    setTeams(updatedTeamList);
-    const currentUpdatedTeam = updatedTeamList.find(t => t.id === teamId);
-    if (currentUpdatedTeam) FirestoreSyncService.saveTeam(currentUpdatedTeam).catch(e => console.warn('Cloud team update:', e));
 
     // 2. Gán nhân viên vào đội này
-    const updatedEmployees = PayrollDatabase.getEmployees().map(e =>
-      e.id === empId ? { ...e, doiId: teamId } : e
-    );
-    PayrollDatabase.saveEmployees(updatedEmployees);
-    setEmployees(updatedEmployees);
-    const updatedEmp = updatedEmployees.find(e => e.id === empId);
-    if (updatedEmp) FirestoreSyncService.saveEmployee(updatedEmp).catch(e => console.warn('Cloud emp update:', e));
+    setEmployees(prev => {
+      const updated = prev.map(e => (e.id === empId ? { ...e, doiId: teamId } : e));
+      PayrollDatabase.saveEmployees(updated);
+      const updatedEmp = updated.find(e => e.id === empId);
+      if (updatedEmp) FirestoreSyncService.saveEmployee(updatedEmp).catch(e => console.warn('Cloud emp update:', e));
+      return updated;
+    });
 
     // 3. Nếu có tài khoản, nâng quyền lên DOI_TRUONG
     if (userAcc) {
-      const updatedUsers = PayrollDatabase.getUserAccounts().map(u =>
-        u.id === userAcc.id ? { ...u, vaiTro: 'DOI_TRUONG' as const, doiId: teamId } : u
-      );
-      PayrollDatabase.saveUserAccounts(updatedUsers);
-      setUserAccounts(updatedUsers);
-      const targetUser = updatedUsers.find(u => u.id === userAcc.id);
-      if (targetUser) FirestoreSyncService.saveUser(targetUser).catch(e => console.warn('Cloud user update:', e));
+      setUserAccounts(prev => {
+        const updated = prev.map(u =>
+          u.id === userAcc.id ? { ...u, vaiTro: 'DOI_TRUONG' as const, doiId: teamId } : u
+        );
+        PayrollDatabase.saveUserAccounts(updated);
+        const targetUser = updated.find(u => u.id === userAcc.id);
+        if (targetUser) FirestoreSyncService.saveUser(targetUser).catch(e => console.warn('Cloud user update:', e));
+        return updated;
+      });
     }
 
     createAuditLog(
