@@ -387,13 +387,6 @@ export class FirestoreSyncService {
         // Hệ thống ĐÃ KHỞI TẠO:
         // 1. Tuyệt đối KHÔNG tự động tạo lại bất kỳ đội nhóm nào! (Nếu mảng rỗng nghĩa là admin đã xóa)
         // 2. Tuyệt đối KHÔNG tự tạo lại các tài khoản nhân sự đã bị xóa!
-        // 3. Chỉ nâng cấp mật khẩu của thach nếu còn là '123456' để tránh Chrome cảnh báo data breach
-        for (const userDoc of usersSnap.docs) {
-          const uData = userDoc.data() as UserAccount;
-          if (uData.username === 'thach' && uData.password === '123456') {
-            await setDoc(doc(db, 'users', userDoc.id), { ...uData, password: 'Thach@Cogava2026' });
-          }
-        }
         // Nếu chẳng may tất cả admin bị xóa hết, chỉ phục hồi 1 tài khoản admin tối cao để không bị khóa hệ thống
         if (usersSnap.empty) {
           const defaultAdmin = params.defaultUsers.find(u => u.username === 'admin') || params.defaultUsers[0];

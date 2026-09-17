@@ -391,24 +391,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    // Hỗ trợ cả mật khẩu mới Thach@Cogava2026 và mật khẩu cũ 123456
-    const isThach = cleanUser === 'thach';
-    const isPasswordValid =
-      account.password === passwordInput ||
-      (isThach && (passwordInput === '123456' || passwordInput === 'Thach@Cogava2026'));
-
-    if (!isPasswordValid) {
+    if (account.password !== passwordInput) {
       return {
         success: false,
         message: 'Mật khẩu không chính xác! Vui lòng thử lại hoặc liên hệ Quản trị viên.',
       };
-    }
-
-    // Tự động nâng cấp tài khoản thach từ mật khẩu yếu bị Google gắn cờ sang mật khẩu an toàn
-    if (isThach && account.password === '123456') {
-      account.password = 'Thach@Cogava2026';
-      PayrollDatabase.saveUserAccounts(userAccounts);
-      FirestoreSyncService.saveUser(account).catch(e => console.warn('Pass upgrade:', e));
     }
 
     const session: UserSession = {

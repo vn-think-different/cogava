@@ -23,7 +23,7 @@ export const DEFAULT_USER_ACCOUNTS: UserAccount[] = [
   {
     id: 'usr-thach',
     username: 'thach',
-    password: 'Thach@Cogava2026',
+    password: '123456',
     tenHienThi: 'Thạch',
     vaiTro: 'ADMIN',
     avatar: 'preset-admin',
@@ -129,7 +129,7 @@ export class PayrollDatabase {
       accounts.unshift({
         id: 'usr-thach',
         username: 'thach',
-        password: 'Thach@Cogava2026',
+        password: '123456',
         tenHienThi: 'Thạch',
         vaiTro: 'ADMIN',
         avatar: 'preset-admin',
