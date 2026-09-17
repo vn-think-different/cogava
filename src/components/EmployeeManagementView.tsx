@@ -26,6 +26,7 @@ import {
   Eye,
   Upload,
   AlertCircle,
+  Lock,
 } from 'lucide-react';
 
 export const EmployeeManagementView: React.FC = () => {

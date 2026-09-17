@@ -10,8 +10,10 @@ import {
   UserAccount,
   UserSession,
   VaiTroNguoiDung,
+  TrangThaiNhanVien,
+  TrangThaiChamCong,
 } from '../types';
-import { THONG_TIN_CONG_TY } from '../data/initialData';
+import { THONG_TIN_CONG_TY, DEFAULT_TEAMS, INITIAL_CONFIGS } from '../data/initialData';
 import { calculateDailyPayroll } from '../utils/payrollEngine';
 import { getDayOfWeekVN } from '../utils/formatters';
 import { PayrollDatabase, DEFAULT_USER_ACCOUNTS } from '../services/payrollDatabase';
@@ -87,6 +89,22 @@ interface AppContextType {
   lockMonth: (yearMonth: string) => void;
   unlockMonth: (yearMonth: string, lyDo: string) => void;
 
+  // Quản lý Tab hiển thị toàn hệ thống
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+
+  // Trạng thái đồng bộ Cloud & Tự động đồng bộ
+  isSyncingCloud: boolean;
+  syncFromCloud: () => Promise<void>;
+
+  // Cảnh báo bảo vệ đăng nhập đơn thiết bị
+  sessionConflictInfo: {
+    isOpen: boolean;
+    deviceName: string;
+    loginAt: string;
+  };
+  closeSessionConflictModal: () => void;
+
   // Tiện ích
   resetToSampleData: () => void;
 }
@@ -128,52 +146,154 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Cloud Synchronization Status
   const [isCloudSynced, setIsCloudSynced] = useState<boolean>(true);
+  const [isSyncingCloud, setIsSyncingCloud] = useState<boolean>(false);
+
+  // Tab State
+  const [activeTab, setActiveTabState] = useState<string>('dashboard');
+  const setActiveTab = (tab: string) => {
+    if (tab === 'NHAN_SU') {
+      setActiveTabState('employees');
+    } else {
+      setActiveTabState(tab);
+    }
+  };
+
+  // Cảnh báo xung đột đăng nhập (Single Device Session Protection)
+  const [sessionConflictInfo, setSessionConflictInfo] = useState<{
+    isOpen: boolean;
+    deviceName: string;
+    loginAt: string;
+  }>({
+    isOpen: false,
+    deviceName: '',
+    loginAt: '',
+  });
+
+  const closeSessionConflictModal = () => {
+    setSessionConflictInfo(prev => ({ ...prev, isOpen: false }));
+  };
+
+  // Tự động đồng bộ toàn bộ CSDL từ Cloud Firestore
+  const syncFromCloud = async () => {
+    setIsSyncingCloud(true);
+    try {
+      // 1. Đảm bảo cấu hình và dữ liệu nền tảng có trên Cloud
+      await FirestoreSyncService.ensureDefaultDataOnCloud({
+        defaultTeams: DEFAULT_TEAMS,
+        defaultUsers: DEFAULT_USER_ACCOUNTS,
+        defaultConfigs: INITIAL_CONFIGS,
+      });
+
+      // 2. Tải dữ liệu mới nhất từ Cloud
+      const cloudData = await FirestoreSyncService.syncAllDataFromCloud();
+
+      if (cloudData.teams.length > 0) {
+        setTeams(cloudData.teams);
+        PayrollDatabase.saveTeams(cloudData.teams);
+      } else {
+        const localTeams = PayrollDatabase.getTeams();
+        for (const t of localTeams) {
+          await FirestoreSyncService.saveTeam(t);
+        }
+      }
+
+      if (cloudData.employees.length > 0) {
+        setEmployees(cloudData.employees);
+        PayrollDatabase.saveEmployees(cloudData.employees);
+      }
+
+      if (cloudData.configs.length > 0) {
+        setConfigs(cloudData.configs);
+        PayrollDatabase.saveConfigs(cloudData.configs);
+      }
+
+      if (cloudData.users.length > 0) {
+        setUserAccounts(cloudData.users);
+        PayrollDatabase.saveUserAccounts(cloudData.users);
+      }
+
+      if (cloudData.attendanceRecords.length > 0) {
+        setAttendanceRecords(cloudData.attendanceRecords);
+        PayrollDatabase.saveAttendanceRecords(cloudData.attendanceRecords);
+      } else {
+        // Nếu Cloud chưa có bản ghi nào nhưng máy cục bộ có -> Đẩy lên Cloud bảo lưu
+        const localAtt = PayrollDatabase.getAttendanceRecords();
+        if (localAtt.length > 0) {
+          await FirestoreSyncService.batchSaveAttendance(localAtt);
+        }
+      }
+
+      if (cloudData.auditLogs.length > 0) {
+        setAuditLogs(cloudData.auditLogs);
+        PayrollDatabase.saveAuditLogs(cloudData.auditLogs.slice(0, 100));
+      }
+
+      setIsCloudSynced(true);
+    } catch (err) {
+      console.warn('Lỗi khi đồng bộ dữ liệu từ Cloud Firestore:', err);
+    } finally {
+      setIsSyncingCloud(false);
+    }
+  };
 
   // Initial Cloud Firestore Seeding & Realtime Listeners
   useEffect(() => {
     // 1. Initial Cloud seed if database collections are empty
-    FirestoreSyncService.initializeAndSyncSeed({
-      initialTeams: teams,
-      initialEmployees: employees,
-      initialConfigs: configs,
-      initialUsers: userAccounts,
-      initialAuditLogs: auditLogs,
+    FirestoreSyncService.ensureDefaultDataOnCloud({
+      defaultTeams: DEFAULT_TEAMS,
+      defaultUsers: DEFAULT_USER_ACCOUNTS,
+      defaultConfigs: INITIAL_CONFIGS,
     }).catch(err => console.warn('Firestore initial sync notice:', err));
 
     // 2. Real-time Subscriptions with Firestore
     const unsubTeams = FirestoreSyncService.subscribeTeams(cloudTeams => {
-      setTeams(cloudTeams);
-      PayrollDatabase.saveTeams(cloudTeams);
-      setIsCloudSynced(true);
+      if (cloudTeams.length > 0) {
+        setTeams(cloudTeams);
+        PayrollDatabase.saveTeams(cloudTeams);
+        setIsCloudSynced(true);
+      }
     });
 
     const unsubEmps = FirestoreSyncService.subscribeEmployees(cloudEmps => {
-      setEmployees(cloudEmps);
-      PayrollDatabase.saveEmployees(cloudEmps);
-      setIsCloudSynced(true);
+      if (cloudEmps.length > 0) {
+        setEmployees(cloudEmps);
+        PayrollDatabase.saveEmployees(cloudEmps);
+        setIsCloudSynced(true);
+      }
     });
 
     const unsubAtt = FirestoreSyncService.subscribeAttendance(cloudAtt => {
-      setAttendanceRecords(cloudAtt);
-      PayrollDatabase.saveAttendanceRecords(cloudAtt);
-      setIsCloudSynced(true);
+      if (cloudAtt.length > 0) {
+        setAttendanceRecords(cloudAtt);
+        PayrollDatabase.saveAttendanceRecords(cloudAtt);
+        setIsCloudSynced(true);
+      } else {
+        const localAtt = PayrollDatabase.getAttendanceRecords();
+        if (localAtt.length > 0) {
+          FirestoreSyncService.batchSaveAttendance(localAtt).catch(e => console.warn(e));
+        }
+      }
     });
 
     const unsubCfg = FirestoreSyncService.subscribeConfigs(cloudCfg => {
-      setConfigs(cloudCfg);
-      PayrollDatabase.saveConfigs(cloudCfg);
-      setIsCloudSynced(true);
+      if (cloudCfg.length > 0) {
+        setConfigs(cloudCfg);
+        PayrollDatabase.saveConfigs(cloudCfg);
+        setIsCloudSynced(true);
+      }
     });
 
     const unsubUsers = FirestoreSyncService.subscribeUsers(cloudUsers => {
-      setUserAccounts(cloudUsers);
-      PayrollDatabase.saveUserAccounts(cloudUsers);
-      setIsCloudSynced(true);
+      if (cloudUsers.length > 0) {
+        setUserAccounts(cloudUsers);
+        PayrollDatabase.saveUserAccounts(cloudUsers);
+        setIsCloudSynced(true);
+      }
     });
 
     const unsubAudit = FirestoreSyncService.subscribeAuditLogs(cloudLogs => {
       setAuditLogs(cloudLogs);
-      PayrollDatabase.saveAuditLogs(cloudLogs);
+      PayrollDatabase.saveAuditLogs(cloudLogs.slice(0, 100));
       setIsCloudSynced(true);
     });
 
@@ -187,13 +307,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
-  // 6. Authentication & Current User session
+  // 6. Authentication & Session Management
+  // Dùng sessionStorage để khi người dùng tắt tab hoặc thoát trình duyệt, hệ thống tự động đăng xuất!
+  const SESSION_ACTIVE_KEY = 'cogava_payroll_auth_session_active';
+  const SESSION_TOKEN_KEY = 'cogava_payroll_active_token';
+  const SESSION_USER_KEY = 'cogava_payroll_auth_session_user';
+
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem(LOCAL_STORAGE_SESSION_KEY + '_active') === 'true';
+    return sessionStorage.getItem(SESSION_ACTIVE_KEY) === 'true';
+  });
+
+  const [currentSessionToken, setCurrentSessionToken] = useState<string>(() => {
+    return sessionStorage.getItem(SESSION_TOKEN_KEY) || '';
   });
 
   const [currentUser, setCurrentUserState] = useState<UserSession>(() => {
-    const saved = localStorage.getItem(LOCAL_STORAGE_SESSION_KEY + '_user');
+    const saved = sessionStorage.getItem(SESSION_USER_KEY);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -202,7 +331,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error(e);
       }
     }
-    // Default session: Thạch (Admin)
     const adminAccount = userAccounts.find(u => u.vaiTro === 'ADMIN') || DEFAULT_USER_ACCOUNTS[0];
     return {
       id: adminAccount.id,
@@ -230,16 +358,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setCurrentUser = (userOrUpdater: UserSession | ((prev: UserSession) => UserSession)) => {
     setCurrentUserState(prev => {
       const next = typeof userOrUpdater === 'function' ? userOrUpdater(prev) : userOrUpdater;
-      localStorage.setItem(LOCAL_STORAGE_SESSION_KEY + '_user', JSON.stringify(next));
+      sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(next));
       return next;
     });
   };
 
-  const login = (user: UserSession) => {
+  const login = async (user: UserSession) => {
+    const sessionToken = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    setCurrentSessionToken(sessionToken);
     setCurrentUser(user);
     setIsAuthenticated(true);
-    localStorage.setItem(LOCAL_STORAGE_SESSION_KEY + '_active', 'true');
-    localStorage.setItem(LOCAL_STORAGE_SESSION_KEY + '_user', JSON.stringify(user));
+
+    // Lưu vào sessionStorage để đảm bảo khi tắt trình duyệt sẽ tự động đăng xuất
+    sessionStorage.setItem(SESSION_ACTIVE_KEY, 'true');
+    sessionStorage.setItem(SESSION_TOKEN_KEY, sessionToken);
+    sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(user));
+
+    // Đặt tab mặc định theo vai trò
+    setActiveTabState(user.vaiTro === 'NHAN_VIEN' ? 'portal' : 'dashboard');
+
+    // 1. Đăng ký session trên Cloud Firestore để kiểm soát đăng nhập 1 thiết bị
+    try {
+      await FirestoreSyncService.registerActiveSession(user.id, sessionToken);
+    } catch (err) {
+      console.warn('Lỗi lưu session lên Firestore:', err);
+    }
+
+    // 2. Tự động đồng bộ toàn bộ dữ liệu Cloud sau khi đăng nhập
+    syncFromCloud().catch(err => console.warn('Lỗi auto syncFromCloud khi đăng nhập:', err));
   };
 
   const loginWithCredentials = (
@@ -281,10 +427,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  const logout = () => {
+  const logout = async (isConflict = false) => {
+    if (currentUser?.id && currentSessionToken && !isConflict) {
+      try {
+        await FirestoreSyncService.clearActiveSession(currentUser.id, currentSessionToken);
+      } catch (e) {
+        console.warn('Lỗi xóa session Firestore:', e);
+      }
+    }
     setIsAuthenticated(false);
+    setCurrentSessionToken('');
+    sessionStorage.removeItem(SESSION_ACTIVE_KEY);
+    sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    sessionStorage.removeItem(SESSION_USER_KEY);
     localStorage.removeItem(LOCAL_STORAGE_SESSION_KEY + '_active');
   };
+
+  // Giám sát phiên đăng nhập đơn thiết bị thời gian thực
+  // Nếu có thiết bị khác đăng nhập trùng tài khoản -> Tự động đăng xuất và cảnh báo
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser?.id || !currentSessionToken) return;
+
+    const unsubSession = FirestoreSyncService.subscribeActiveSession(
+      currentUser.id,
+      currentSessionToken,
+      (conflictInfo) => {
+        // Thiết bị khác đã đăng nhập!
+        setSessionConflictInfo({
+          isOpen: true,
+          deviceName: conflictInfo.deviceName || 'Thiết bị khác',
+          loginAt: conflictInfo.loginAt || new Date().toLocaleString('vi-VN'),
+        });
+        // Đăng xuất ngay lập tức khỏi thiết bị hiện tại
+        logout(true);
+      }
+    );
+
+    return () => {
+      unsubSession();
+    };
+  }, [isAuthenticated, currentUser?.id, currentSessionToken]);
 
   // 7. Device Recognition (Desktop vs Mobile)
   const [deviceMode, setDeviceModeState] = useState<'auto' | 'desktop' | 'mobile'>(() => {
@@ -1064,16 +1246,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const currentEmp = employees.find(e => e.id === id);
     if (!currentEmp) return;
 
-    const newStatus = currentEmp.trangThai === 'DANG_LAM' ? 'DA_NGHI' : 'DANG_LAM';
+    const newStatus: TrangThaiNhanVien = currentEmp.trangThai === 'DANG_LAM' ? 'DA_NGHI' : 'DANG_LAM';
     const todayStr = new Date().toISOString().substring(0, 10);
 
     setEmployees(prev => {
-      const updated = prev.map(emp =>
+      const updated: NhanVien[] = prev.map(emp =>
         emp.id === id
           ? {
               ...emp,
               trangThai: newStatus,
-              ngayNghiViec: newStatus === 'DA_NGHI' ? todayStr : null,
+              ngayNghiViec: newStatus === 'DA_NGHI' ? todayStr : undefined,
             }
           : emp
       );
@@ -1102,8 +1284,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Khoá sổ tháng
   const lockMonth = (yearMonth: string) => {
     setAttendanceRecords(prev => {
-      const updated = prev.map(rec =>
-        rec.ngay.startsWith(yearMonth) ? { ...rec, trangThai: 'DA_CHOT' } : rec
+      const updated: BangChamCongNgay[] = prev.map(rec =>
+        rec.ngay.startsWith(yearMonth) ? { ...rec, trangThai: 'DA_CHOT' as TrangThaiChamCong } : rec
       );
       PayrollDatabase.saveAttendanceRecords(updated);
       const monthRecs = updated.filter(r => r.ngay.startsWith(yearMonth));
@@ -1123,8 +1305,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Mở lại sổ tháng (chỉ Admin)
   const unlockMonth = (yearMonth: string, lyDo: string) => {
     setAttendanceRecords(prev => {
-      const updated = prev.map(rec =>
-        rec.ngay.startsWith(yearMonth) ? { ...rec, trangThai: 'NHAP' } : rec
+      const updated: BangChamCongNgay[] = prev.map(rec =>
+        rec.ngay.startsWith(yearMonth) ? { ...rec, trangThai: 'NHAP' as TrangThaiChamCong } : rec
       );
       PayrollDatabase.saveAttendanceRecords(updated);
       const monthRecs = updated.filter(r => r.ngay.startsWith(yearMonth));
@@ -1276,15 +1458,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const resetToSampleData = () => {
-    if (window.confirm('Khôi phục toàn bộ dữ liệu mẫu ban đầu từ file Excel COGAVA? Thao tác này sẽ đặt lại các sửa đổi.')) {
-      localStorage.clear();
-      window.location.reload();
-    }
+    localStorage.clear();
+    sessionStorage.clear();
+    window.location.reload();
   };
 
   const value: AppContextType = {
     companyInfo: THONG_TIN_CONG_TY,
     isCloudSynced,
+    isSyncingCloud,
+    syncFromCloud,
+    sessionConflictInfo,
+    closeSessionConflictModal,
+    activeTab,
+    setActiveTab,
     employees,
     teams,
     configs,

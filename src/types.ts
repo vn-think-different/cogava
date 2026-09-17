@@ -30,6 +30,8 @@ export interface DoiNhanVien {
   tenDoi: string; // e.g. 'Đội 1 - Dĩ An'
   doiTruongUserId?: string; // id UserAccount của đội trưởng
   doiTruongTen?: string; // Tên hiển thị của đội trưởng
+  khuVuc?: string; // Khu vực hoạt động
+  moTa?: string; // Mô tả đội
   ghiChu?: string;
   ngayTao?: string;
 }
@@ -42,6 +44,7 @@ export interface NhanVien {
   ngayVaoLam: string; // YYYY-MM-DD
   ngayNghiViec?: string | null;
   sdt?: string;
+  soDienThoai?: string; // Alias for sdt
   stkNganHang?: string;
   tenNganHang?: string;
   soCccd?: string; // Số Căn cước công dân (12 số - không bắt buộc)

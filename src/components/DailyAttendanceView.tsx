@@ -644,7 +644,7 @@ export const DailyAttendanceView: React.FC = () => {
                 {isAdmin && (
                   <button
                     type="button"
-                    onClick={() => setActiveTab('NHAN_SU')}
+                    onClick={() => setActiveTab('employees')}
                     className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer inline-flex items-center gap-1.5"
                   >
                     <Users className="w-3.5 h-3.5" />

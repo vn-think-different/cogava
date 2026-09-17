@@ -21,7 +21,16 @@ export const THONG_TIN_CONG_TY: ThongTinDoanhNghiep = {
   mauChuDao: '#FF8000',
 };
 
-export const DEFAULT_TEAMS: DoiNhanVien[] = [];
+export const DEFAULT_TEAMS: DoiNhanVien[] = [
+  {
+    id: 'doi-1',
+    tenDoi: 'Đội 1 - COGAVA',
+    doiTruongTen: 'Thạch',
+    doiTruongUserId: 'usr-thach',
+    ghiChu: 'Đội bắt gà chủ lực COGAVA',
+    ngayTao: '2026-01-01 08:00:00',
+  },
+];
 
 export const INITIAL_EMPLOYEES: NhanVien[] = [];
 

@@ -9,6 +9,7 @@ import {
 } from '../utils/formatters';
 import { PayslipModal } from './PayslipModal';
 import { UserAvatar } from './UserAvatar';
+import { ConfirmModal } from './ConfirmModal';
 import {
   FileSpreadsheet,
   Lock,
@@ -71,6 +72,7 @@ export const MonthlyPayrollView: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<string>(defaultInitialMonth);
   const [selectedTeamFilter, setSelectedTeamFilter] = useState<string>('ALL');
   const [activeSubTab, setActiveSubTab] = useState<'summary' | 'matrix'>('summary');
+  const [showLockConfirm, setShowLockConfirm] = useState<boolean>(false);
   
   // Mobile display mode toggles: 'card' (default on mobile) or 'table'
   const [mobileSummaryMode, setMobileSummaryMode] = useState<'card' | 'table'>('card');
@@ -200,20 +202,22 @@ export const MonthlyPayrollView: React.FC = () => {
   // Handle Month Lock / Close
   const handleLock = () => {
     if (currentUser.vaiTro !== 'ADMIN') {
-      alert('Chỉ Quản trị viên mới có quyền chốt sổ lương!');
       return;
     }
-    if (window.confirm(`Bạn có chắc chắn muốn chốt sổ bảng lương tháng ${selectedMonth}? Sau khi chốt, dữ liệu sẽ ở trạng thái CHỈ ĐỌC.`)) {
-      lockMonth(selectedMonth);
-      try {
-        confetti({
-          particleCount: 50,
-          spread: 70,
-          origin: { y: 0.6 },
-          colors: ['#10B981', '#059669', '#34D399'],
-        });
-      } catch (e) {}
-    }
+    setShowLockConfirm(true);
+  };
+
+  const confirmLock = () => {
+    setShowLockConfirm(false);
+    lockMonth(selectedMonth);
+    try {
+      confetti({
+        particleCount: 50,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#10B981', '#059669', '#34D399'],
+      });
+    } catch (e) {}
   };
 
   // Handle Month Unlock
@@ -1201,6 +1205,18 @@ export const MonthlyPayrollView: React.FC = () => {
           onClose={() => setSelectedEmployeeForPayslip(null)}
         />
       )}
+
+      {/* Modal xác nhận chốt sổ lương */}
+      <ConfirmModal
+        isOpen={showLockConfirm}
+        onClose={() => setShowLockConfirm(false)}
+        onConfirm={confirmLock}
+        title={`Chốt sổ bảng lương tháng ${selectedMonth}?`}
+        message="Sau khi chốt sổ, toàn bộ bản ghi chấm công và tính lương của tháng này sẽ chuyển sang trạng thái CHỈ ĐỌC (khóa chỉnh sửa) để bảo vệ số liệu. Bạn có chắc chắn muốn chốt sổ?"
+        confirmText="Đồng ý chốt sổ"
+        cancelText="Hủy bỏ"
+        type="warning"
+      />
     </div>
   );
 };

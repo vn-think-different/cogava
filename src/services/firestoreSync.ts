@@ -1,11 +1,15 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   setDoc,
   deleteDoc,
   onSnapshot,
   writeBatch,
+  query,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import {
@@ -14,23 +18,36 @@ import {
   DoiNhanVien,
   NhanVien,
   NhatKyThayDoi,
-  ThongTinDoanhNghiep,
   UserAccount,
 } from '../types';
 
+export interface ActiveSessionInfo {
+  userId: string;
+  sessionToken: string;
+  loginAt: string;
+  deviceName?: string;
+  userAgent?: string;
+}
+
 export class FirestoreSyncService {
-  // 1. Teams
+  // ==========================================
+  // 1. TEAMS (Đội nhóm)
+  // ==========================================
   static subscribeTeams(callback: (teams: DoiNhanVien[]) => void) {
     const colRef = collection(db, 'teams');
-    return onSnapshot(colRef, (snapshot) => {
-      const items: DoiNhanVien[] = [];
-      snapshot.forEach((d) => items.push(d.data() as DoiNhanVien));
-      if (items.length > 0) {
-        callback(items);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const items: DoiNhanVien[] = [];
+        snapshot.forEach((d) => items.push(d.data() as DoiNhanVien));
+        if (items.length > 0) {
+          callback(items);
+        }
+      },
+      (error) => {
+        console.warn('Firestore teams sync warning:', error);
       }
-    }, (error) => {
-      console.warn('Firestore teams sync warning:', error);
-    });
+    );
   }
 
   static async saveTeam(team: DoiNhanVien) {
@@ -49,18 +66,24 @@ export class FirestoreSyncService {
     }
   }
 
-  // 2. Employees
+  // ==========================================
+  // 2. EMPLOYEES (Nhân sự)
+  // ==========================================
   static subscribeEmployees(callback: (employees: NhanVien[]) => void) {
     const colRef = collection(db, 'employees');
-    return onSnapshot(colRef, (snapshot) => {
-      const items: NhanVien[] = [];
-      snapshot.forEach((d) => items.push(d.data() as NhanVien));
-      if (items.length > 0) {
-        callback(items);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const items: NhanVien[] = [];
+        snapshot.forEach((d) => items.push(d.data() as NhanVien));
+        if (items.length > 0) {
+          callback(items);
+        }
+      },
+      (error) => {
+        console.warn('Firestore employees sync warning:', error);
       }
-    }, (error) => {
-      console.warn('Firestore employees sync warning:', error);
-    });
+    );
   }
 
   static async saveEmployee(emp: NhanVien) {
@@ -79,16 +102,22 @@ export class FirestoreSyncService {
     }
   }
 
-  // 3. Attendance Records
+  // ==========================================
+  // 3. ATTENDANCE RECORDS (Bảng chấm công ngày)
+  // ==========================================
   static subscribeAttendance(callback: (records: BangChamCongNgay[]) => void) {
     const colRef = collection(db, 'attendance_records');
-    return onSnapshot(colRef, (snapshot) => {
-      const items: BangChamCongNgay[] = [];
-      snapshot.forEach((d) => items.push(d.data() as BangChamCongNgay));
-      callback(items);
-    }, (error) => {
-      console.warn('Firestore attendance sync warning:', error);
-    });
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const items: BangChamCongNgay[] = [];
+        snapshot.forEach((d) => items.push(d.data() as BangChamCongNgay));
+        callback(items);
+      },
+      (error) => {
+        console.warn('Firestore attendance sync warning:', error);
+      }
+    );
   }
 
   static async saveAttendanceRecord(record: BangChamCongNgay) {
@@ -131,18 +160,24 @@ export class FirestoreSyncService {
     }
   }
 
-  // 4. Configs
+  // ==========================================
+  // 4. CONFIGS (Cấu hình đơn giá & công thức)
+  // ==========================================
   static subscribeConfigs(callback: (configs: CauHinhLuong[]) => void) {
     const colRef = collection(db, 'configs');
-    return onSnapshot(colRef, (snapshot) => {
-      const items: CauHinhLuong[] = [];
-      snapshot.forEach((d) => items.push(d.data() as CauHinhLuong));
-      if (items.length > 0) {
-        callback(items);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const items: CauHinhLuong[] = [];
+        snapshot.forEach((d) => items.push(d.data() as CauHinhLuong));
+        if (items.length > 0) {
+          callback(items);
+        }
+      },
+      (error) => {
+        console.warn('Firestore configs sync warning:', error);
       }
-    }, (error) => {
-      console.warn('Firestore configs sync warning:', error);
-    });
+    );
   }
 
   static async saveConfig(cfg: CauHinhLuong) {
@@ -153,18 +188,24 @@ export class FirestoreSyncService {
     }
   }
 
-  // 5. User Accounts
+  // ==========================================
+  // 5. USER ACCOUNTS (Tài khoản người dùng)
+  // ==========================================
   static subscribeUsers(callback: (users: UserAccount[]) => void) {
     const colRef = collection(db, 'users');
-    return onSnapshot(colRef, (snapshot) => {
-      const items: UserAccount[] = [];
-      snapshot.forEach((d) => items.push(d.data() as UserAccount));
-      if (items.length > 0) {
-        callback(items);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        const items: UserAccount[] = [];
+        snapshot.forEach((d) => items.push(d.data() as UserAccount));
+        if (items.length > 0) {
+          callback(items);
+        }
+      },
+      (error) => {
+        console.warn('Firestore users sync warning:', error);
       }
-    }, (error) => {
-      console.warn('Firestore users sync warning:', error);
-    });
+    );
   }
 
   static async saveUser(user: UserAccount) {
@@ -183,18 +224,22 @@ export class FirestoreSyncService {
     }
   }
 
-  // 6. Audit Logs
+  // ==========================================
+  // 6. AUDIT LOGS (Giới hạn tối đa 100 bản ghi mới nhất)
+  // ==========================================
   static subscribeAuditLogs(callback: (logs: NhatKyThayDoi[]) => void) {
-    const colRef = collection(db, 'audit_logs');
-    return onSnapshot(colRef, (snapshot) => {
-      const items: NhatKyThayDoi[] = [];
-      snapshot.forEach((d) => items.push(d.data() as NhatKyThayDoi));
-      if (items.length > 0) {
+    const q = query(collection(db, 'audit_logs'), orderBy('thoiGian', 'desc'), limit(100));
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const items: NhatKyThayDoi[] = [];
+        snapshot.forEach((d) => items.push(d.data() as NhatKyThayDoi));
         callback(items);
+      },
+      (error) => {
+        console.warn('Firestore audit logs sync warning:', error);
       }
-    }, (error) => {
-      console.warn('Firestore audit logs sync warning:', error);
-    });
+    );
   }
 
   static async saveAuditLog(log: NhatKyThayDoi) {
@@ -205,66 +250,147 @@ export class FirestoreSyncService {
     }
   }
 
-  // Initial Sync / Seed helper
-  static async initializeAndSyncSeed(params: {
-    initialTeams: DoiNhanVien[];
-    initialEmployees: NhanVien[];
-    initialConfigs: CauHinhLuong[];
-    initialUsers: UserAccount[];
-    initialAuditLogs: NhatKyThayDoi[];
-  }) {
+  // ==========================================
+  // 7. BẢO VỆ ĐĂNG NHẬP (SINGLE DEVICE ACTIVE SESSION)
+  // ==========================================
+  static async registerActiveSession(
+    userId: string,
+    sessionToken: string,
+    deviceName?: string
+  ): Promise<void> {
     try {
-      // 1. Teams
-      const teamsSnap = await getDocs(collection(db, 'teams'));
-      if (teamsSnap.empty) {
-        const batch = writeBatch(db);
-        for (const t of params.initialTeams) {
-          batch.set(doc(db, 'teams', t.id), t);
-        }
-        await batch.commit();
-      }
+      const sessionDocRef = doc(db, 'active_sessions', userId);
+      const data: ActiveSessionInfo = {
+        userId,
+        sessionToken,
+        loginAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        deviceName: deviceName || (typeof navigator !== 'undefined' ? (navigator.userAgent.includes('Mobile') ? 'Điện thoại di động' : 'Máy tính / Trình duyệt') : 'Thiết bị khác'),
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+      };
+      await setDoc(sessionDocRef, data);
+    } catch (e) {
+      console.error('Error registering active session on Firestore:', e);
+    }
+  }
 
-      // 2. Employees
-      const empSnap = await getDocs(collection(db, 'employees'));
-      if (empSnap.empty) {
-        const batch = writeBatch(db);
-        for (const emp of params.initialEmployees) {
-          batch.set(doc(db, 'employees', emp.id), emp);
+  static subscribeActiveSession(
+    userId: string,
+    currentLocalToken: string,
+    onConflict: (info: { deviceName?: string; loginAt?: string }) => void
+  ) {
+    const sessionDocRef = doc(db, 'active_sessions', userId);
+    return onSnapshot(
+      sessionDocRef,
+      (snapshot) => {
+        if (!snapshot.exists()) return;
+        const data = snapshot.data() as ActiveSessionInfo;
+        // Nếu token trên Cloud khác token của máy hiện tại -> tài khoản vừa đăng nhập ở thiết bị khác!
+        if (data && data.sessionToken && data.sessionToken !== currentLocalToken) {
+          console.warn('Detected concurrent session login on another device for user:', userId);
+          onConflict({
+            deviceName: data.deviceName,
+            loginAt: data.loginAt,
+          });
         }
-        await batch.commit();
+      },
+      (error) => {
+        console.warn('Active session listener warning:', error);
       }
+    );
+  }
 
-      // 3. Configs
-      const cfgSnap = await getDocs(collection(db, 'configs'));
-      if (cfgSnap.empty) {
-        const batch = writeBatch(db);
-        for (const c of params.initialConfigs) {
-          batch.set(doc(db, 'configs', c.id), c);
+  static async clearActiveSession(userId: string, currentSessionToken?: string): Promise<void> {
+    try {
+      const sessionDocRef = doc(db, 'active_sessions', userId);
+      const snap = await getDoc(sessionDocRef);
+      if (snap.exists()) {
+        const data = snap.data() as ActiveSessionInfo;
+        // Chỉ xóa nếu token khớp với phiên hiện tại đang đăng xuất
+        if (!currentSessionToken || data.sessionToken === currentSessionToken) {
+          await deleteDoc(sessionDocRef);
         }
-        await batch.commit();
-      }
-
-      // 4. Users
-      const userSnap = await getDocs(collection(db, 'users'));
-      if (userSnap.empty) {
-        const batch = writeBatch(db);
-        for (const u of params.initialUsers) {
-          batch.set(doc(db, 'users', u.id), u);
-        }
-        await batch.commit();
-      }
-
-      // 5. Audit
-      const auditSnap = await getDocs(collection(db, 'audit_logs'));
-      if (auditSnap.empty) {
-        const batch = writeBatch(db);
-        for (const a of params.initialAuditLogs) {
-          batch.set(doc(db, 'audit_logs', a.id), a);
-        }
-        await batch.commit();
       }
     } catch (e) {
-      console.warn('Firestore initial seeding error:', e);
+      console.warn('Error clearing active session:', e);
+    }
+  }
+
+  // ==========================================
+  // 8. ĐỒNG BỘ TOÀN DIỆN KHI ĐĂNG NHẬP (FULL SYNC ON LOGIN)
+  // ==========================================
+  static async syncAllDataFromCloud(): Promise<{
+    teams: DoiNhanVien[];
+    employees: NhanVien[];
+    configs: CauHinhLuong[];
+    attendanceRecords: BangChamCongNgay[];
+    users: UserAccount[];
+    auditLogs: NhatKyThayDoi[];
+  }> {
+    const result = {
+      teams: [] as DoiNhanVien[],
+      employees: [] as NhanVien[],
+      configs: [] as CauHinhLuong[],
+      attendanceRecords: [] as BangChamCongNgay[],
+      users: [] as UserAccount[],
+      auditLogs: [] as NhatKyThayDoi[],
+    };
+
+    try {
+      const [teamsSnap, empsSnap, cfgsSnap, attSnap, usersSnap, auditSnap] = await Promise.all([
+        getDocs(collection(db, 'teams')),
+        getDocs(collection(db, 'employees')),
+        getDocs(collection(db, 'configs')),
+        getDocs(collection(db, 'attendance_records')),
+        getDocs(collection(db, 'users')),
+        getDocs(query(collection(db, 'audit_logs'), orderBy('thoiGian', 'desc'), limit(100))),
+      ]);
+
+      teamsSnap.forEach((d) => result.teams.push(d.data() as DoiNhanVien));
+      empsSnap.forEach((d) => result.employees.push(d.data() as NhanVien));
+      cfgsSnap.forEach((d) => result.configs.push(d.data() as CauHinhLuong));
+      attSnap.forEach((d) => result.attendanceRecords.push(d.data() as BangChamCongNgay));
+      usersSnap.forEach((d) => result.users.push(d.data() as UserAccount));
+      auditSnap.forEach((d) => result.auditLogs.push(d.data() as NhatKyThayDoi));
+    } catch (e) {
+      console.error('Error during syncAllDataFromCloud:', e);
+    }
+
+    return result;
+  }
+
+  // Đảm bảo dữ liệu cơ sở ban đầu (admin, config) luôn sẵn sàng trên Cloud
+  static async ensureDefaultDataOnCloud(params: {
+    defaultTeams: DoiNhanVien[];
+    defaultUsers: UserAccount[];
+    defaultConfigs: CauHinhLuong[];
+  }) {
+    try {
+      // 1. Kiểm tra users: nếu thiếu tài khoản mặc định thì tạo
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const existingUsernames = new Set(usersSnap.docs.map((d) => (d.data() as UserAccount).username));
+      for (const u of params.defaultUsers) {
+        if (!existingUsernames.has(u.username)) {
+          await setDoc(doc(db, 'users', u.id), u);
+        }
+      }
+
+      // 2. Kiểm tra configs
+      const configsSnap = await getDocs(collection(db, 'configs'));
+      if (configsSnap.empty) {
+        for (const c of params.defaultConfigs) {
+          await setDoc(doc(db, 'configs', c.id), c);
+        }
+      }
+
+      // 3. Kiểm tra teams: nếu trống hoàn toàn thì nạp defaultTeams
+      const teamsSnap = await getDocs(collection(db, 'teams'));
+      if (teamsSnap.empty && params.defaultTeams.length > 0) {
+        for (const t of params.defaultTeams) {
+          await setDoc(doc(db, 'teams', t.id), t);
+        }
+      }
+    } catch (e) {
+      console.warn('ensureDefaultDataOnCloud notice:', e);
     }
   }
 }

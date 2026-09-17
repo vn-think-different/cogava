@@ -3,6 +3,7 @@ import { Logo } from './Logo';
 import { useApp } from '../context/AppContext';
 import { UserAvatar } from './UserAvatar';
 import { AccountSettingsModal } from './AccountSettingsModal';
+import { ConfirmModal } from './ConfirmModal';
 import {
   BarChart3,
   CalendarCheck2,
@@ -60,6 +61,8 @@ export const Header: React.FC<HeaderProps> = ({
     deviceMode,
     setDeviceMode,
     isMobileView,
+    isSyncingCloud,
+    syncFromCloud,
   } = useApp();
 
   const userTeam = teams.find(t => t.id === currentUser.doiId);
@@ -68,6 +71,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [showCompanyInfo, setShowCompanyInfo] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [accountModalTab, setAccountModalTab] = useState<'profile' | 'password' | 'accounts' | 'database'>('profile');
   const userDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -191,10 +195,8 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const handleResetData = () => {
-    if (window.confirm('Bạn có chắc chắn muốn đặt lại dữ liệu mẫu gốc từ file Excel COGAVA? Thao tác này sẽ khôi phục 5 nhân viên và số liệu chấm công chuẩn.')) {
-      resetToSampleData();
-      setUserDropdownOpen(false);
-    }
+    setUserDropdownOpen(false);
+    setShowResetConfirm(true);
   };
 
   return (
@@ -210,10 +212,22 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="text-stone-600 hidden md:inline">|</span>
             <span className="text-stone-400 hidden md:inline truncate">{companyInfo.linhVuc}</span>
             <span className="text-stone-600 hidden lg:inline">|</span>
-            <span className="hidden lg:flex items-center gap-1.5 text-emerald-400 text-[11px] font-medium bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-800/60">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>Cloud Firestore đã kết nối</span>
-            </span>
+            
+            {/* Clickable Cloud Firestore sync button */}
+            <button
+              type="button"
+              onClick={() => syncFromCloud()}
+              disabled={isSyncingCloud}
+              title="Nhấn để đồng bộ dữ liệu ngay lập tức với Cloud Firestore"
+              className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 text-[11px] font-medium bg-emerald-950/60 hover:bg-emerald-900/60 px-2 py-0.5 rounded-md border border-emerald-800/60 transition-colors cursor-pointer"
+            >
+              {isSyncingCloud ? (
+                <RotateCcw className="w-3 h-3 text-emerald-400 animate-spin" />
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              )}
+              <span className="hidden sm:inline">{isSyncingCloud ? 'Đang đồng bộ Cloud...' : 'Cloud Firestore đã kết nối'}</span>
+            </button>
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -854,6 +868,21 @@ export const Header: React.FC<HeaderProps> = ({
         isOpen={accountModalOpen}
         onClose={() => setAccountModalOpen(false)}
         initialTab={accountModalTab}
+      />
+
+      {/* Modal xác nhận Đặt lại Dữ liệu Mẫu gốc */}
+      <ConfirmModal
+        isOpen={showResetConfirm}
+        onClose={() => setShowResetConfirm(false)}
+        onConfirm={() => {
+          setShowResetConfirm(false);
+          resetToSampleData();
+        }}
+        title="Khôi phục dữ liệu mẫu gốc?"
+        message="Thao tác này sẽ đặt lại dữ liệu nhân sự, bảng lương và cấu hình về trạng thái mẫu chuẩn từ file Excel COGAVA. Bạn có chắc chắn muốn tiếp tục?"
+        confirmText="Đồng ý khôi phục"
+        cancelText="Hủy bỏ"
+        type="danger"
       />
     </>
   );

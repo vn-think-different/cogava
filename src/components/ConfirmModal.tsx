@@ -1,7 +1,7 @@
 import React from 'react';
 import { AlertTriangle, Trash2, X, Check } from 'lucide-react';
 
-interface ConfirmModalProps {
+export interface ConfirmModalProps {
   isOpen: boolean;
   title: string;
   message: string;
@@ -12,7 +12,8 @@ interface ConfirmModalProps {
   itemName?: string;
   itemDetail?: string;
   onConfirm: () => void;
-  onCancel: () => void;
+  onCancel?: () => void;
+  onClose?: () => void;
 }
 
 export const ConfirmModal: React.FC<ConfirmModalProps> = ({
@@ -27,8 +28,11 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   itemDetail,
   onConfirm,
   onCancel,
+  onClose,
 }) => {
   if (!isOpen) return null;
+
+  const handleDismiss = onCancel || onClose || (() => {});
 
   // Default item label based on modal purpose
   const defaultLabel =
@@ -42,7 +46,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
-      onClick={onCancel}
+      onClick={handleDismiss}
       role="dialog"
       aria-modal="true"
     >
@@ -126,7 +130,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
         <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-stone-100">
           <button
             type="button"
-            onClick={onCancel}
+            onClick={handleDismiss}
             className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
           >
             {cancelText}
